@@ -1,22 +1,503 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<html>
 <!--
-  Character Dashboard — a presentation layer for the Claude D&D system.
+  Campaign Codex — a presentation layer for the Claude D&D system.
   Paste a /SHEET or /STATUS response and it parses the fixed formats
   into a living visual dashboard. No game logic, no AI: pure parse + render.
 -->
+<head>
 <meta charset="utf-8" />
-    <title>Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@500;600&display=swap" rel="stylesheet" />
-<link rel="icon" href="./images/journal.png" type="image/png">
-<link rel="stylesheet" href="style.css">
 </head>
 
 <body>
+<style>
+  :root{
+    /* Tome-and-ledger palette — dark bound leather, gilt, verdigris, ember */
+    --ink:        #14121c;
+    --ink-2:      #1b1826;
+    --surface:    #221e30;
+    --surface-2:  #2a2538;
+    --edge:       #3a3350;
+    --edge-soft:  #2f2a40;
+    --vellum:     #ece4d2;
+    --vellum-dim: #b6ac96;
+    --muted:      #8d8470;
+    --gilt:       #c9a24b;
+    --gilt-soft:  #9c7e3c;
+    --patina:     #7fb09a;
+    --ember:      #c8623f;
+    --blood:      #b8423f;
+    --good:       #7fb09a;
+    --bad:        #c8623f;
+    --radius:     14px;
+    --radius-sm:  9px;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #211c30 0%, var(--ink) 55%) fixed;
+    color:var(--vellum);
+    font-family:"Inter", system-ui, sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{ max-width:1080px; margin:0 auto; padding:28px 20px 64px; }
+
+  /* ---------- Intake bar ---------- */
+  .intake{
+    background:linear-gradient(180deg,var(--ink-2),var(--surface));
+    border:1px solid var(--edge-soft);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:26px;
+  }
+  .intake-head{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .codex-mark{
+    font-family:"Spectral", serif; font-weight:700; font-size:21px;
+    letter-spacing:.3px; color:var(--vellum);
+  }
+  .codex-mark .gilt{ color:var(--gilt); }
+  .codex-sub{ color:var(--muted); font-size:12.5px; margin-left:auto; }
+
+  textarea{
+    width:100%; min-height:108px; resize:vertical;
+    background:var(--ink); color:var(--vellum);
+    border:1px solid var(--edge); border-radius:var(--radius-sm);
+    padding:12px 14px; font-family:"Spline Sans Mono", ui-monospace, monospace;
+    font-size:12.5px; line-height:1.55;
+  }
+  textarea::placeholder{ color:var(--muted); }
+  textarea:focus-visible{ outline:2px solid var(--gilt); outline-offset:1px; }
+
+  .row{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+  button{
+    font-family:"Inter",sans-serif; font-weight:600; font-size:13px;
+    border-radius:var(--radius-sm); padding:9px 16px; cursor:pointer;
+    border:1px solid var(--edge); background:var(--surface-2); color:var(--vellum);
+    transition:transform .08s ease, border-color .15s ease, background .15s ease;
+  }
+  button:hover{ border-color:var(--gilt-soft); }
+  button:active{ transform:translateY(1px); }
+  button:focus-visible{ outline:2px solid var(--gilt); outline-offset:2px; }
+  button.primary{
+    position:relative; isolation:isolate;
+    background:linear-gradient(180deg,var(--gilt),var(--gilt-soft));
+    color:#221a08; border-color:var(--gilt-soft);
+    transition:transform .08s ease, color .3s ease, background .3s ease, border-color .3s ease;
+  }
+  button.primary:hover{ background:#221a08; color:var(--gilt); border-color:var(--gilt); }
+  /* after a click the button snaps back to its unhovered look until the mouse leaves and returns */
+  button.primary.clicked:hover{ background:linear-gradient(180deg,var(--gilt),var(--gilt-soft)); color:#221a08; border-color:var(--gilt-soft); }
+  .btn-label{ position:relative; z-index:1; }
+  .btn-ring{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  .btn-ring-rect{
+    fill:none; stroke:var(--gilt); stroke-width:2; stroke-linecap:round;
+    vector-effect:non-scaling-stroke;
+    stroke-dasharray:100; stroke-dashoffset:100;
+    transition:none;
+  }
+  button.primary:hover .btn-ring-rect{ stroke-dashoffset:0; transition:stroke-dashoffset .7s cubic-bezier(.4,0,.2,1); }
+  button.primary.clicked:hover .btn-ring-rect{ stroke-dashoffset:100; transition:none; }
+
+  /* gold sparkle burst on click (adapted from the bubbly-button) */
+  button.primary:before, button.primary:after{
+    position:absolute; content:''; display:block; width:140%; height:100%; left:-20%;
+    z-index:-1; transition:all ease-in-out .5s; background-repeat:no-repeat;
+  }
+  button.primary:before{
+    display:none; top:-75%;
+    background-image:
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, transparent 20%, var(--gilt) 20%, transparent 30%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, transparent 10%, var(--gilt) 15%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%);
+    background-size: 10% 10%, 20% 20%, 15% 15%, 20% 20%, 18% 18%, 10% 10%, 15% 15%, 10% 10%, 18% 18%;
+  }
+  button.primary:after{
+    display:none; bottom:-75%;
+    background-image:
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, transparent 10%, var(--gilt) 15%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%),
+      radial-gradient(circle, var(--gilt) 20%, transparent 20%);
+    background-size: 15% 15%, 20% 20%, 18% 18%, 20% 20%, 15% 15%, 10% 10%, 20% 20%;
+  }
+  button.primary.animate:before{ display:block; animation:topBubbles ease-in-out .75s forwards; }
+  button.primary.animate:after{ display:block; animation:bottomBubbles ease-in-out .75s forwards; }
+  @keyframes topBubbles{
+    0%{ background-position: 5% 90%, 10% 90%, 10% 90%, 15% 90%, 25% 90%, 25% 90%, 40% 90%, 55% 90%, 70% 90%; }
+    50%{ background-position: 0% 80%, 0% 20%, 10% 40%, 20% 0%, 30% 30%, 22% 50%, 50% 50%, 65% 20%, 90% 30%; }
+    100%{ background-position: 0% 70%, 0% 10%, 10% 30%, 20% -10%, 30% 20%, 22% 40%, 50% 40%, 65% 10%, 90% 20%; background-size: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
+  }
+  @keyframes bottomBubbles{
+    0%{ background-position: 10% -10%, 30% 10%, 55% -10%, 70% -10%, 85% -10%, 70% -10%, 70% 0%; }
+    50%{ background-position: 0% 80%, 20% 80%, 45% 60%, 60% 100%, 75% 70%, 95% 60%, 105% 0%; }
+    100%{ background-position: 0% 90%, 20% 90%, 45% 70%, 60% 110%, 75% 80%, 95% 70%, 110% 10%; background-size: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
+  }
+  button.ghost{ background:transparent; }
+  .icon-btn{ width:38px; height:38px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:var(--vellum-dim); }
+  .icon-btn svg{ width:17px; height:17px; }
+  .icon-btn:hover{ color:var(--ember); border-color:var(--ember); }
+  .feed{ color:var(--muted); font-size:12px; margin-left:4px; }
+  .feed.ok{ color:var(--patina); }
+  .feed.warn{ color:var(--ember); }
+
+  /* ---------- save slots ---------- */
+  .slots{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:26px; }
+  @media (max-width:560px){ .slots{ grid-template-columns:1fr; } }
+  .slot{
+    background:linear-gradient(180deg,var(--ink-2),var(--surface));
+    border:1px solid var(--edge-soft); border-radius:var(--radius);
+    padding:12px 13px; display:flex; flex-direction:column; gap:10px;
+    cursor:pointer; transition:border-color .18s ease, box-shadow .18s ease;
+  }
+  .slot.active{ border-color:var(--gilt); box-shadow:inset 0 0 14px rgba(201,162,75,.1); }
+  .slot:hover{ border-color:var(--gilt); box-shadow:0 0 0 1px var(--gilt-soft); }
+  .slot-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .slot-name{ font-family:"Spectral",serif; font-weight:600; font-size:15px; color:var(--vellum); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .slot:not(.filled) .slot-name{ color:var(--muted); font-style:italic; font-weight:500; }
+  .slot-tag-group{ display:flex; align-items:center; gap:7px; flex:none; }
+  .slot-tag{ font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); }
+  .slot-trash{ width:24px; height:24px; padding:0; display:inline-flex; align-items:center; justify-content:center; color:var(--vellum-dim); }
+  .slot-trash svg{ width:14px; height:14px; }
+  .slot-trash:hover:not(:disabled){ background:#c2493a; color:#fff; border-color:#c2493a; }
+  .slot-trash:disabled{ opacity:.35; cursor:default; border-color:var(--edge-soft); }
+  .slot-btns{ display:flex; gap:7px; }
+  .slot-btns button{ flex:1; padding:6px 0; font-size:12px; }
+  .slot-save:hover{ background:#4f9d63; color:#fff; border-color:#4f9d63; }
+  .slot-export:hover{ background:#7c5cd0; color:#fff; border-color:#7c5cd0; }
+  .slot.active .slot-tag{ color:var(--gilt); }
+
+  /* ---------- Empty state ---------- */
+  .empty{
+    text-align:center; padding:70px 24px; color:var(--vellum-dim);
+  }
+  .empty h2{ font-family:"Spectral",serif; font-weight:600; color:var(--vellum); margin:0 0 8px; font-size:24px;}
+  .empty p{ max-width:440px; margin:0 auto; font-size:14px; }
+  .empty code{ color:var(--gilt); font-family:"Spline Sans Mono",monospace; }
+  .empty .load-example{ margin-top:22px; }
+
+  /* ---------- Header band ---------- */
+  .band{
+    display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap;
+    border-bottom:1px solid var(--edge-soft); padding-bottom:18px; margin-bottom:22px;
+  }
+  .name-block{ flex:1; min-width:200px; }
+  .eyebrow{
+    font-size:11px; letter-spacing:2.5px; text-transform:uppercase;
+    color:var(--muted); margin-bottom:4px;
+  }
+  .char-name{
+    font-family:"Spectral",serif; font-weight:700; font-size:clamp(28px,5vw,42px);
+    line-height:1.04; color:var(--vellum); margin:0;
+  }
+  .level-badge{
+    position:relative;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    width:78px; height:78px; border-radius:50%;
+    background:radial-gradient(circle at 50% 35%, var(--surface-2), var(--ink-2));
+    box-shadow:inset 0 0 18px rgba(201,162,75,.12);
+  }
+  .lv-ring{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .lv-ring circle{ fill:none; stroke-width:4; }
+  .lv-ring-bg{ stroke:var(--edge); }
+  .lv-ring-fg{ stroke:var(--gilt); stroke-linecap:round; transform:rotate(-90deg); transform-origin:50% 50%; transform-box:fill-box; transition:stroke-dasharray .5s ease; }
+  .level-badge .lv{ font-size:10px; letter-spacing:2px; color:var(--gilt); text-transform:uppercase; }
+  .level-badge .num{ font-family:"Spline Sans Mono",monospace; font-weight:600; font-size:30px; color:var(--vellum); line-height:1; }
+
+  .mood-chip{
+    display:inline-flex; align-items:center; gap:7px;
+    padding:6px 13px; border-radius:999px; font-size:12.5px; font-weight:600;
+    border:1px solid var(--edge);
+  }
+  .mood-chip .dot{ width:8px; height:8px; border-radius:50%; }
+  .mood-good{ color:var(--good); border-color:rgba(127,176,154,.4); }
+  .mood-good .dot{ background:var(--good); box-shadow:0 0 8px var(--good); }
+  .mood-bad{ color:var(--bad); border-color:rgba(200,98,63,.45); }
+  .mood-bad .dot{ background:var(--bad); box-shadow:0 0 8px var(--bad); }
+  .mood-neutral{ color:var(--vellum-dim); }
+  .mood-neutral .dot{ background:var(--vellum-dim); }
+
+  /* ---------- Grid scaffolding ---------- */
+  .grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
+  .span-12{ grid-column:span 12; }
+  .span-8{ grid-column:span 8; }
+  .span-6{ grid-column:span 6; }
+  .span-4{ grid-column:span 4; }
+  @media (max-width:760px){
+    .span-8,.span-6,.span-4{ grid-column:span 12; }
+  }
+
+  @media (max-width:560px){
+    .wrap{ padding:18px 13px 48px; }
+    .card{ padding:14px 14px; }
+    .band{ gap:14px; }
+    .vitals{ gap:8px; }
+    .vital{ padding:11px 10px; }
+    .vital .lab{ font-size:9.5px; }
+    .vital .val{ font-size:18px; gap:5px; }
+    .vital .val small{ font-size:11px; }
+    .vicon{ width:15px; height:15px; }
+    .abilities{ gap:8px; }
+    .ability{ padding:10px 4px 9px; }
+    .ability .score{ font-size:23px; }
+    .moodhp{ max-width:none; gap:10px; }
+    .idcard .val{ font-size:18px; }
+  }
+
+  @media (max-width:400px){
+    .vital .val{ font-size:16px; gap:4px; }
+    .vital .val small{ font-size:10.5px; }
+    .vicon{ width:13px; height:13px; }
+    .abilities{ grid-template-columns:repeat(3,1fr); }
+  }
+
+  .card{
+    background:linear-gradient(180deg,var(--surface),var(--ink-2));
+    border:1px solid var(--edge-soft); border-radius:var(--radius);
+    padding:16px 17px;
+  }
+  .card-title{
+    font-family:"Spectral",serif; font-weight:600; font-size:13px;
+    letter-spacing:1.5px; text-transform:uppercase; color:var(--gilt);
+    margin:0 0 13px; display:flex; align-items:center; gap:9px;
+  }
+  .card-title::after{ content:""; order:1; flex:1; height:1px; background:var(--edge-soft); }
+
+  /* ---------- Vitals ---------- */
+  .vitals{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+
+  /* identity badges — two equal cards meeting in the middle */
+  .idrow{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:480px){ .idrow{ grid-template-columns:1fr; } }
+  .idcard{
+    text-align:center; padding:15px 14px;
+    background:radial-gradient(circle at 50% 0%, var(--surface-2), var(--ink-2));
+    border:1px solid var(--edge-soft); border-radius:var(--radius);
+  }
+  .idcard .lab{ font-size:10.5px; letter-spacing:2px; text-transform:uppercase; color:var(--gilt); }
+  .idcard .val{ font-family:"Spectral",serif; font-weight:600; font-size:21px; color:var(--vellum); margin-top:4px; }
+
+  .prog-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px 28px; }
+  @media (max-width:480px){ .prog-grid{ grid-template-columns:1fr; } }
+  .prog-cell{ min-width:0; }
+
+  .ach-row{ display:flex; gap:11px; margin-top:9px; align-items:center; }
+  .lvl-icons{ display:inline-flex; gap:11px; align-items:center; border-radius:9px; }
+
+  /* level achievements — gold horizontal dashes */
+  /* level achievements — gold diamonds (≈ same footprint as the death circles) */
+  .ldiamond{ width:13px; height:13px; transform:rotate(45deg); border-radius:3px; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease; }
+  .ldiamond.on{ background:linear-gradient(135deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 8px rgba(201,162,75,.35); }
+
+  /* death saves — original circular pips */
+  .dcirc{ width:18px; height:18px; border-radius:50%; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease, opacity .3s ease; }
+  .dcirc.on{ background:radial-gradient(circle,var(--ember),#7e3120); border-color:var(--ember); box-shadow:0 0 9px rgba(200,98,63,.4); }
+  .dcirc.spent{ opacity:.5; }
+
+  /* ability / proficiency — gold vertical dashes (wrap as they multiply) */
+  .vdash-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .vdash{ width:6px; height:20px; border-radius:3px; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease; }
+  .vdash.on{ background:linear-gradient(180deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 7px rgba(201,162,75,.3); }
+  .vital{
+    background:var(--ink-2); border:1px solid var(--edge-soft);
+    border-radius:var(--radius-sm); padding:13px 14px;
+  }
+  .vital .lab{ font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); }
+  .vital .val{ display:flex; align-items:center; gap:7px; white-space:nowrap; font-family:"Spline Sans Mono",monospace; font-weight:600; font-size:23px; color:var(--vellum); margin-top:3px; }
+  .vital .val small{ font-size:13px; color:var(--vellum-dim); font-weight:500; }
+  .vital .val .hpmax{ color:var(--vellum-dim); font-weight:500; }
+  .vicon{ flex:none; width:17px; height:17px; display:inline-flex; }
+  .vicon svg{ width:100%; height:100%; display:block; }
+  .hpbar{ height:7px; border-radius:99px; background:var(--ink); margin-top:9px; overflow:hidden; border:1px solid var(--edge-soft); }
+  .hpbar > span{ display:block; height:100%; border-radius:99px; transition:width .5s ease, background .4s ease; }
+  .moodhp{ display:flex; align-items:center; gap:12px; margin-top:15px; max-width:400px; }
+  .mood-face{ flex:none; width:27px; height:27px; display:inline-flex; transition:color .4s ease; }
+  .mood-face svg{ width:100%; height:100%; display:block; }
+  .hpbar.lg{ flex:1; height:11px; margin-top:0; }
+
+  /* ---------- Abilities ---------- */
+  .abilities{ display:grid; grid-template-columns:repeat(6,1fr); gap:11px; }
+  @media (max-width:620px){ .abilities{ grid-template-columns:repeat(3,1fr);} }
+  .ability{
+    text-align:center; padding:12px 6px 11px;
+    background:radial-gradient(circle at 50% 0%, var(--surface-2), var(--ink-2));
+    border:1px solid var(--edge-soft); border-radius:var(--radius-sm);
+    position:relative;
+  }
+  .ability .ab{ font-size:11px; letter-spacing:1.5px; color:var(--gilt); font-weight:600; }
+  .ability .score{ font-family:"Spline Sans Mono",monospace; font-weight:600; font-size:27px; color:var(--vellum); line-height:1.1; }
+  .ability .mod{
+    display:inline-block; margin-top:3px; font-family:"Spline Sans Mono",monospace;
+    font-size:12.5px; padding:1px 9px; border-radius:99px;
+    background:var(--ink); border:1px solid var(--edge-soft); color:var(--vellum-dim);
+  }
+  .ability .mod.pos{ color:var(--patina); }
+  .ability .mod.neg{ color:var(--ember); }
+
+  /* ---------- Rule-of-three pip meters (the signature motif) ---------- */
+  .track{ margin-bottom:14px; }
+  .track:last-child{ margin-bottom:0; }
+  .track-head{ display:flex; gap:9px; align-items:baseline; margin-bottom:7px; }
+  .track-head .t{ font-size:12.5px; color:var(--vellum); font-weight:500; }
+  .track-head .t em{ color:var(--muted); font-style:normal; font-size:11.5px; }
+  .track-head .c{ font-family:"Spline Sans Mono",monospace; font-size:12px; color:var(--muted); }
+  .pips{ display:flex; gap:7px; }
+  .pip{
+    width:0; height:0; flex:1; aspect-ratio:1/1; max-width:22px;
+    transform:rotate(45deg); border-radius:3px;
+    background:var(--ink); border:1.5px solid var(--edge);
+    transition:background .3s ease, box-shadow .3s ease;
+  }
+  .pip.on{ background:linear-gradient(135deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 10px rgba(201,162,75,.35); }
+  .pip.death{ border-radius:50%; transform:none; }
+  .pip.death.on{ background:radial-gradient(circle,var(--ember),#7e3120); border-color:var(--ember); box-shadow:0 0 10px rgba(200,98,63,.4); }
+  .pip.death.spent{ background:var(--ink); border-color:var(--edge); opacity:.5; }
+
+  /* ---------- Chips & lists ---------- */
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    font-size:12.5px; padding:5px 12px; border-radius:99px; position:relative;
+    background:var(--ink-2); border:1px solid var(--edge-soft); color:var(--vellum-dim);
+  }
+  .chip b{ color:var(--gilt); font-family:"Spline Sans Mono",monospace; font-weight:600; margin-left:3px; }
+
+  .entry{ padding:11px 0; border-bottom:1px solid var(--edge-soft); }
+  .entry.eq{ display:flex; align-items:center; gap:13px; }
+  .eqicon{ flex:none; width:24px; height:38px; display:flex; align-items:center; justify-content:center; }
+  .eqicon svg{ width:100%; height:100%; display:block; }
+  .entry.eq .e-body{ flex:1; min-width:0; }
+  .entry:first-child{ padding-top:0; }
+  .entry:last-child{ border-bottom:none; padding-bottom:0; }
+  .entry .e-name{ font-weight:600; color:var(--vellum); font-size:13.5px; }
+  .entry .e-eff{ color:var(--vellum-dim); font-size:12.5px; margin-top:2px; }
+
+  .kv{ display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--edge-soft); align-items:baseline; }
+  .kv:last-child{ border-bottom:none; }
+  .kv .k{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); min-width:78px; }
+  .kv .v{ color:var(--vellum); font-size:13.5px; flex:1; }
+
+  .ev-blob{ display:block; }
+  .ev-line{ position:relative; font-size:13px; color:var(--vellum-dim); margin-bottom:5px; padding-left:16px; }
+  .ev-line::before{ content:"•"; position:absolute; left:3px; color:var(--gilt-soft); }
+  .ev-blob.editing{ outline:none; }
+
+  .objective{
+    background:linear-gradient(180deg,rgba(201,162,75,.07),transparent);
+    border:1px solid var(--gilt-soft); border-radius:var(--radius-sm);
+    padding:12px 14px; margin-top:2px;
+  }
+  .objective .lab{ font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--gilt); }
+  .objective .txt{ font-family:"Spectral",serif; font-size:15px; color:var(--vellum); margin-top:3px; }
+
+  .trash-fab{ position:fixed; z-index:9999; width:26px; height:26px; padding:0; border-radius:50%;
+    border:1px solid var(--edge); background:var(--surface); color:var(--ember); cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,.45); }
+  .trash-fab.pop{ animation:trashPop .14s ease-out; }
+  .trash-fab[hidden]{ display:none; }
+  .trash-fab:hover{ background:var(--ember); color:#fff; border-color:var(--ember); }
+  .trash-fab svg{ width:14px; height:14px; }
+  @keyframes trashPop{ 0%{ transform:scale(.4); opacity:0; } 100%{ transform:scale(1); opacity:1; } }
+
+
+  /* ---------- add controls (per-card) ---------- */
+  .add-btn{
+    order:2; flex:none; width:21px; height:21px; padding:0; border-radius:6px;
+    border:1px solid var(--edge); background:var(--ink-2); color:var(--gilt);
+    font-size:15px; line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+    opacity:0; transition:opacity .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .card:hover .add-btn{ opacity:1; }
+  .add-btn:hover{ border-color:var(--gilt); background:rgba(201,162,75,.14); }
+
+  .add-chip{
+    font-size:13px; line-height:1; padding:5px 12px; border-radius:99px; min-height:25px;
+    border:1px dashed var(--edge); background:transparent; color:var(--gilt); cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    opacity:0; transition:opacity .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .card:hover .add-chip{ opacity:1; }
+  .add-chip:hover{ border-color:var(--gilt); background:rgba(201,162,75,.10); }
+
+  /* ---------- drag & drop reordering ---------- */
+  [data-drag]{ cursor:grab; }
+  [data-drag]:active{ cursor:grabbing; }
+  .entry.dragging, .chip.dragging{ opacity:.4; }
+  .entry.drag-before{ box-shadow:inset 0 2px 0 0 var(--gilt); }
+  .entry.drag-after{ box-shadow:inset 0 -2px 0 0 var(--gilt); }
+  .chip.drag-before::before, .chip.drag-after::after{ content:""; position:absolute; top:2px; bottom:2px; width:2px; border-radius:2px; background:var(--gilt); }
+  .chip.drag-before::before{ left:-5px; }
+  .chip.drag-after::after{ right:-5px; }
+
+  /* ---------- inline live editing ---------- */
+  .edit{ cursor:text; border-radius:4px; padding:0 1px; transition:background .15s ease, box-shadow .15s ease; }
+  .edit:hover{ background:rgba(201,162,75,.10); box-shadow:inset 0 0 0 1px var(--gilt-soft); }
+  .edit.editing{ background:rgba(201,162,75,.15); box-shadow:inset 0 0 0 1px var(--gilt); outline:none; white-space:pre-wrap; }
+  .edit.is-ph{ color:var(--muted); font-style:italic; }
+
+  /* health up/down arrows — stacked, spanning the full height of the health card */
+  .health-vital, .step-vital{ position:relative; padding-right:32px; }
+  .hp-stepper{ position:absolute; top:1px; right:1px; bottom:1px; width:27px; display:flex; flex-direction:column;
+    border-left:1px solid var(--edge-soft); border-radius:0 var(--radius-sm) var(--radius-sm) 0; overflow:hidden; }
+  .hp-step{ flex:1; border:none; background:transparent; color:var(--vellum-dim); cursor:pointer; font-size:10px; display:flex; align-items:center; justify-content:center; padding:0; transition:background .15s ease, color .15s ease; }
+  .hp-step:hover{ background:var(--ink); color:var(--gilt); }
+  .hp-step.hp-up{ border-bottom:1px solid var(--edge-soft); }
+
+  /* progression +/- steppers — appear on hover, latch on tap (mobile) */
+  .prog-cell{ position:relative; }
+  .prog-steppers{ display:inline-flex; gap:4px; margin-left:8px; opacity:0; transition:opacity .15s ease; }
+  .prog-cell:hover .prog-steppers, .prog-cell.tapped .prog-steppers{ opacity:1; }
+  .prog-step{ width:18px; height:18px; line-height:1; padding:0; border-radius:5px; border:1px solid var(--edge);
+    background:var(--ink-2); color:var(--vellum-dim); font-size:13px; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center; transition:border-color .15s ease, color .15s ease; }
+  .prog-step:hover{ border-color:var(--gilt); color:var(--gilt); }
+  .hpbar-wrap{ flex:1; position:relative; }
+
+  /* ---------- reusable sparkle burst (gold / green / red) ---------- */
+  .sparkfx{ position:fixed; pointer-events:none; z-index:60; --spark:#c9a24b; }
+  .sparkfx.spark-health{ border-radius:99px; animation:hpGlow .8s ease-out forwards; }
+  @keyframes hpGlow{ 0%{ box-shadow:0 0 0 0 transparent; } 35%{ box-shadow:0 0 13px 1px var(--spark); } 100%{ box-shadow:0 0 0 0 transparent; } }
+  .spark-dot{ position:absolute; border-radius:50%; transform:translate(-50%,-50%);
+    box-shadow:0 0 4px currentColor; animation:sparkFly .72s ease-out forwards; will-change:transform,opacity; }
+  @keyframes sparkFly{
+    0%{ transform:translate(-50%,-50%) translate(0,0) scale(.5); opacity:0; }
+    18%{ opacity:1; transform:translate(-50%,-50%) translate(calc(var(--dx) * .32), calc(var(--dy) * .32)) scale(1); }
+    100%{ transform:translate(-50%,-50%) translate(var(--dx), var(--dy)) scale(0); opacity:0; }
+  }
+
+  /* level-up: rainbow glow on each diamond, following its actual (rotated) shape so the gaps fill in */
+  .ldiamond.dglow{ animation:diamondGlow 1.7s ease-in-out; }
+  @keyframes diamondGlow{
+    0%{ box-shadow:0 0 4px 0 rgba(201,162,75,.35); }
+    15%{ box-shadow:0 0 11px 3px #e0533f; }
+    33%{ box-shadow:0 0 12px 3px #df8a3a; }
+    50%{ box-shadow:0 0 12px 3px #6fb069; }
+    67%{ box-shadow:0 0 12px 3px #4aa3c9; }
+    85%{ box-shadow:0 0 11px 3px #9b5bc9; }
+    100%{ box-shadow:0 0 8px rgba(201,162,75,.35); }
+  }
+
+
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
+</style>
 
 <div class="wrap">
 
@@ -34,16 +515,16 @@
 
   <div class="slots" id="slots">
     <div class="slot" data-slot="0">
-      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag">Slot 1</span></div>
-      <div class="slot-btns"><button class="slot-save">Save</button><button class="slot-clear">Clear</button></div>
+      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag-group"><button class="slot-trash" type="button" title="Clear slot" aria-label="Clear slot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/><path d="M6 7l1 12.6a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4L18 7"/><path d="M10 11v6M14 11v6"/></svg></button><span class="slot-tag">Slot 1</span></span></div>
+      <div class="slot-btns"><button class="slot-save" type="button">Save</button><button class="slot-export" type="button">Export</button></div>
     </div>
     <div class="slot" data-slot="1">
-      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag">Slot 2</span></div>
-      <div class="slot-btns"><button class="slot-save">Save</button><button class="slot-clear">Clear</button></div>
+      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag-group"><button class="slot-trash" type="button" title="Clear slot" aria-label="Clear slot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/><path d="M6 7l1 12.6a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4L18 7"/><path d="M10 11v6M14 11v6"/></svg></button><span class="slot-tag">Slot 2</span></span></div>
+      <div class="slot-btns"><button class="slot-save" type="button">Save</button><button class="slot-export" type="button">Export</button></div>
     </div>
     <div class="slot" data-slot="2">
-      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag">Slot 3</span></div>
-      <div class="slot-btns"><button class="slot-save">Save</button><button class="slot-clear">Clear</button></div>
+      <div class="slot-top"><span class="slot-name">Empty</span><span class="slot-tag-group"><button class="slot-trash" type="button" title="Clear slot" aria-label="Clear slot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/><path d="M6 7l1 12.6a1.5 1.5 0 0 0 1.5 1.4h7a1.5 1.5 0 0 0 1.5-1.4L18 7"/><path d="M10 11v6M14 11v6"/></svg></button><span class="slot-tag">Slot 3</span></span></div>
+      <div class="slot-btns"><button class="slot-save" type="button">Save</button><button class="slot-export" type="button">Export</button></div>
     </div>
   </div>
 
@@ -61,15 +542,74 @@
 (function(){
   "use strict";
 
+  // ---------- persistence (browser localStorage, with graceful fallbacks) ----------
   var KEY = "campaign-codex-v2";
   var mem = null;
   function copy(o){ return o ? JSON.parse(JSON.stringify(o)) : o; }
+
+  // serialize a character back into pasteable /sheet + /status text
+  function exportText(s){
+    var L = [];
+    var rc = [s.race, s.cls].filter(Boolean).join(" ");
+    L.push((s.name || "Unnamed") + (rc ? " - " + rc : "") + ":");
+    if(s.level != null) L.push("Level: " + s.level);
+    if(s.hp != null && s.hpMax != null) L.push("HP: " + s.hp + "/" + s.hpMax);
+    ["STR","DEX","CON","INT","WIS","CHA"].forEach(function(ab){
+      var a = s.abilities && s.abilities[ab];
+      if(a) L.push(ab + ": " + a.score + " (" + (a.mod>=0?"+":"") + a.mod + ")");
+    });
+    if(s.profs && s.profs.length){
+      var pl = s.profs.filter(function(p){ return p.name; });
+      if(pl.length){ L.push("Proficiencies:"); L.push(pl.map(function(p){ return p.name + " +" + (p.bonus||0); }).join(", ")); }
+    }
+    if(s.traits && s.traits.length){
+      var tl = s.traits.filter(function(t){ return t.name; });
+      if(tl.length){ L.push("Traits:"); tl.forEach(function(t){ L.push("- " + t.name + (t.eff ? " (" + t.eff + ")" : "")); }); }
+    }
+    if(s.actions && s.actions.length){
+      var al = s.actions.filter(function(t){ return t.name; });
+      if(al.length){ L.push("Unique Actions:"); al.forEach(function(t){ L.push("- " + t.name + (t.eff ? " (" + t.eff + ")" : "")); }); }
+    }
+    if(s.equipment && s.equipment.length){
+      var el2 = s.equipment.filter(function(e){ return e.name; });
+      if(el2.length){ L.push("Equipment:"); el2.forEach(function(e){ L.push("- " + e.name + (e.eff ? " (" + e.eff + ")" : "")); }); }
+    }
+    var inv = [];
+    if(s.coin != null) inv.push(s.coin + " coin");
+    if(s.rations != null) inv.push(s.rations + (String(s.rations)==="1" ? " ration" : " rations"));
+    if(s.inventory && s.inventory.length){
+      inv = inv.concat(s.inventory.filter(function(it){
+        return it && !/^\d+\s*coins?\b/i.test(it) && !/^\d+\s*(days?\s+)?rations?\b/i.test(it);
+      }));
+    }
+    if(inv.length){ L.push("Inventory:"); L.push(inv.join(", ")); }
+    var prog = [];
+    if(s.levelXP) prog.push("- Level XP = " + s.levelXP.have + "/" + s.levelXP.need + " Achievements");
+    (s.abilityXP||[]).forEach(function(x){ prog.push("- Ability XP = " + x.name + " [" + x.have + "/" + x.need + "]"); });
+    (s.profXP||[]).forEach(function(x){ prog.push("- Proficiency XP = " + x.name + " [" + x.have + "/" + x.need + "]"); });
+    if(s.death) prog.push("- Death Saves = " + s.death.have + "/" + s.death.need + " Remaining");
+    if(prog.length){ L.push("Progression:"); prog.forEach(function(p){ L.push(p); }); }
+
+    L.push("");
+    L.push("Status Update - Day " + (s.day != null ? s.day : 1));
+    if(s.hp != null && s.hpMax != null) L.push("HP: " + s.hp + "/" + s.hpMax);
+    if(s.coin != null) L.push("Coin: " + s.coin);
+    if(s.rations != null) L.push("Rations: " + s.rations + " days");
+    if(s.mood) L.push("Mood: " + s.mood);
+    if(s.location) L.push("Location: " + s.location);
+    if(s.time) L.push("Time: " + s.time);
+    if(s.effects) L.push("Active Effects: " + s.effects);
+    if(s.objective){ L.push("Current Objective:"); L.push(s.objective); }
+    if(s.events && s.events.length){ L.push("Recent Events:"); s.events.forEach(function(e){ L.push("- " + e); }); }
+
+    return L.join("\n");
+  }
   async function persist(){
     var payload = { current: state, slots: slots };
     mem = payload;
     var json = JSON.stringify(payload);
-    try{ localStorage.setItem(KEY, json); }catch(e){}
-    try{ if(window.storage){ await window.storage.set(KEY, json, false); } }catch(e){}
+    try{ localStorage.setItem(KEY, json); }catch(e){}                      // saved in the user's browser
+    try{ if(window.storage){ await window.storage.set(KEY, json, false); } }catch(e){}  // fallback for the in-app preview
   }
   async function restore(){
     try{ var v = localStorage.getItem(KEY); if(v) return JSON.parse(v); }catch(e){}
@@ -77,6 +617,7 @@
     return mem;
   }
 
+  // ---------- text helpers ----------
   function clean(t){ return (t||"").replace(/\*\*/g,"").replace(/__/g,"").replace(/`/g,"").trim(); }
   function lines(t){ return clean(t).split(/\r?\n/); }
 
@@ -88,13 +629,14 @@
     return HEADERS.indexOf(l) !== -1;
   }
 
+  // grab the block of lines that follow a header until the next known header/blank-gap
   function block(raw, label){
     var ls = lines(raw), out = [];
     var re = new RegExp("^[\\-\\*\\s]*"+label+"\\s*:\\s*(.*)$","i");
     for(var i=0;i<ls.length;i++){
       var m = ls[i].trim().match(re);
       if(!m) continue;
-      var inlineVal = clean(m[1]).replace(/^[\-\*]\s*/,"").trim();
+      var inlineVal = clean(m[1]).replace(/^[\-\*]\s*/,"").trim();   // value on the same line as the label
       if(inlineVal) out.push(inlineVal);
       for(var k=i+1;k<ls.length;k++){
         var line = ls[k].replace(/^[\-\*]\s*/,"").trim();
@@ -107,6 +649,7 @@
     return out;
   }
 
+  // ---- header descriptor parsing (race / class) ----
   var RACE_LIST = ['Half-Elf','Half Elf','Half-Orc','Half Orc','Hill Dwarf','Mountain Dwarf',
     'Wood Elf','High Elf','Dark Elf','Deep Gnome','Forest Gnome','Rock Gnome','Human','Elf',
     'Halfling','Dwarf','Gnome','Tiefling','Dragonborn','Orc','Goblin','Aasimar','Genasi',
@@ -119,24 +662,26 @@
   function tc(s){ return (s||'').toLowerCase().replace(/\b[a-z]/g,function(c){return c.toUpperCase();}); }
   function capFirst(s){ s=(s||'').trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
 
+  // From a descriptor like "Level 1 Human Necromancer" or "Wandering Alchemist (Human, Chaotic Good)"
   function headerMeta(desc){
     var out = {race:null, cls:null};
     if(!desc) return out;
-    var d = desc.replace(/[:：]\s*$/,''), paren = [];
+    var d = desc.replace(/[:：]\s*$/,''), paren = [];        // drop trailing colon from "Race Class:"
     var pm = d.match(/\(([^)]*)\)/);
     if(pm){ paren = pm[1].split(/[,;\/]/).map(function(x){return x.trim();}).filter(Boolean); d = d.replace(/\([^)]*\)/g,' '); }
-    d = d.replace(/\blevel\s*\d+\b/ig,' ').trim();
+    d = d.replace(/\blevel\s*\d+\b/ig,' ').trim();              // drop "Level X"
     var rm = d.match(RACE_RE);
-    if(rm){ out.race = tc(rm[1]); d = d.replace(RACE_RE,' '); }
-    else {
+    if(rm){ out.race = tc(rm[1]); d = d.replace(RACE_RE,' '); } // race sitting in the descriptor body
+    else {                                                      // otherwise look in the parenthetical
       for(var a=0;a<paren.length;a++){ if(ALIGN_RE.test(paren[a])) continue; var prm=paren[a].match(RACE_RE); if(prm){ out.race=tc(prm[1]); break; } }
       if(!out.race){ for(var b=0;b<paren.length;b++){ if(!ALIGN_RE.test(paren[b])){ out.race=tc(paren[b]); break; } } }
     }
-    var cls = d.replace(/\s{2,}/g,' ').replace(/^[\s,:\-–—]+|[\s,:\-–—]+$/g,'').trim();
+    var cls = d.replace(/\s{2,}/g,' ').replace(/^[\s,:\-–—]+|[\s,:\-–—]+$/g,'').trim();  // whatever remains is the class
     if(cls) out.cls = /[a-z]/.test(cls) ? cls : tc(cls);
     return out;
   }
 
+  // "Label: value" — value may sit on the next line if blank after the colon
   function inline(raw, labels){
     var ls = lines(raw);
     for(var j=0;j<labels.length;j++){
@@ -154,6 +699,7 @@
   }
   function num(raw, labels){ var v = inline(raw, labels); if(v===null) return null; var m=v.match(/-?\d+/); return m?parseInt(m[0],10):null; }
 
+  // ---------- parsing ----------
   function parse(raw, prev){
     var s = prev || {};
     s.abilities = s.abilities || {};
@@ -161,15 +707,16 @@
     var isStatus = /status update/i.test(raw);
     var isSheet  = /\b(STR|DEX|CON|INT|WIS|CHA)\s*:/i.test(raw) || (/level\s*:/i.test(raw) && /proficiencies/i.test(raw));
 
+    // name: first meaningful line that isn't a status banner / field
     if(isSheet){
       var ls = lines(raw);
       for(var i=0;i<ls.length;i++){
         var c = clean(ls[i]);
         if(!c) continue;
-        if(/^[=\-*~_\s]+$/.test(c)) continue;
-        if(/character sheet|status update/i.test(c)) continue;
-        if(/^(level|hp|str|dex|con|int|wis|cha)\s*[:]/i.test(c)) break;
-        c = c.replace(/^[=~\s]+|[=~\s]+$/g,"");
+        if(/^[=\-*~_\s]+$/.test(c)) continue;                    // separator rule (===, ---, etc.)
+        if(/character sheet|status update/i.test(c)) continue;   // banner labels
+        if(/^(level|hp|str|dex|con|int|wis|cha)\s*[:]/i.test(c)) break; // reached fields, no name line
+        c = c.replace(/^[=~\s]+|[=~\s]+$/g,"");                   // trim any wrapping === / ~~~
         var nameRaw = c, desc = "";
         var dash = c.split(/\s[-–—]\s/);
         if(dash.length > 1){ nameRaw = dash[0]; desc = dash.slice(1).join(" — "); }
@@ -191,11 +738,13 @@
     var rations = inline(raw, ["rations"]); if(rations!==null){ var rmn = rations.match(/\d+/); s.rations = rmn ? rmn[0] : rations; }
     var day = clean(raw).match(/day\s*\[?\s*(\d+)/i); if(day) s.day = parseInt(day[1],10);
 
+    // abilities
     ["STR","DEX","CON","INT","WIS","CHA"].forEach(function(ab){
       var m = clean(raw).match(new RegExp(ab+"\\s*:\\s*(\\d+)\\s*\\(\\s*([+\\-]?\\d+)\\s*\\)","i"));
       if(m) s.abilities[ab] = { score:parseInt(m[1],10), mod:parseInt(m[2],10) };
     });
 
+    // proficiencies — "Name +X, Other +Y"
     var pb = block(raw,"Proficiencies").join(", ");
     if(pb){
       var profs=[], pm, pre=/([A-Za-z][A-Za-z \-']*?)\s*\+\s*(\d+)/g;
@@ -219,14 +768,15 @@
       var kept = [];
       items.forEach(function(it){
         var cm = it.match(/^(\d+)\s*coins?\b/i);
-        if(cm && s.coin == null){ s.coin = parseInt(cm[1],10); return; }
+        if(cm){ if(s.coin == null) s.coin = parseInt(cm[1],10); return; }   // coin -> card, never a chip
         var rm = it.match(/^(\d+)\s*(days?\s+)?rations?\b/i);
-        if(rm && s.rations == null){ s.rations = rm[1]; return; }
+        if(rm){ if(s.rations == null) s.rations = rm[1]; return; }          // rations -> card, never a chip
         kept.push(capFirst(it));
       });
       if(kept.length) s.inventory = kept; else if(!s.inventory) s.inventory = [];
     }
 
+    // progression tracks
     var prog = clean(raw);
     var lx = prog.match(/level\s*xp\s*=\s*\[?\s*(\d+)\s*\/\s*(\d+)/i)
           || prog.match(/level progress\s*[:=]\s*\[?\s*(\d+)\s*\/\s*(\d+)/i);
@@ -236,6 +786,7 @@
       var ABBR = {STR:"Strength",DEX:"Dexterity",CON:"Constitution",INT:"Intelligence",WIS:"Wisdom",CHA:"Charisma"};
       var abil = [], seenA = {}, mm;
 
+      // form: "INT XP = 0/3" / "Wisdom XP = 2/3"  (ability named directly)
       var reAbCode = /(?:^|[\n,])[\s\-\*•]*(STR|DEX|CON|INT|WIS|CHA|Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s*xp\s*=\s*\[?\s*(\d+)\s*\/\s*(\d+)/ig;
       while((mm = reAbCode.exec(prog)) !== null){
         var code = mm[1].toUpperCase();
@@ -243,6 +794,7 @@
         if(seenA[nm]) continue; seenA[nm] = 1;
         abil.push({name:nm, have:+mm[2], need:+mm[3]});
       }
+      // form: "Ability XP = Dexterity [1/3]"
       var reAbLbl = /ability\s*xp\s*=\s*([A-Za-z][A-Za-z '\-]*?)\s*\[?\s*(\d+)\s*\/\s*(\d+)/ig;
       while((mm = reAbLbl.exec(prog)) !== null){
         if(/^none/i.test(mm[1])) continue;
@@ -266,6 +818,7 @@
     var ds = prog.match(/death\s*saves?\s*[=:]\s*\[?\s*(\d+)\s*\/\s*(\d+)/i);
     if(ds) s.death = {have:+ds[1], need:+ds[2]};
 
+    // world / status fields
     var loc = inline(raw,["current location","location"]); if(loc) s.location = loc;
     var tod = inline(raw,["time of day","time"]); if(tod) s.time = tod;
     var mood = inline(raw,["mood"]); if(mood) s.mood = mood;
@@ -278,9 +831,33 @@
     return s;
   }
 
+  // ---------- rendering ----------
   function esc(t){ return (t==null?"":String(t)).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
 
+  // wrap a value in a double-click-editable span bound to a state path
+  function ed(path, text, opts){
+    opts = opts || {};
+    var cls = "edit" + (opts.cls ? " " + opts.cls : "");
+    var attrs = ' data-edit="' + path + '"';
+    if(opts.glyph) attrs += ' data-glyph="' + opts.glyph + '"';
+    if(opts.ph)    { cls += " is-ph"; attrs += ' data-ph="1"'; }
+    return '<span class="' + cls + '"' + attrs + '>' + esc(text) + '</span>';
+  }
+  // editable that shows a muted placeholder when the value is empty
+  function edph(path, val, ph){
+    return (val!=null && String(val).length) ? ed(path, val) : ed(path, ph, {ph:true});
+  }
+  // split an effect string into individually editable tokens (dice apart from damage type, AC value apart, etc.)
+  function effTokens(path, eff){
+    var toks = String(eff).split(/\s+/);
+    return toks.map(function(tk, i){
+      return '<span class="edit" data-edit="' + path + '" data-tok="' + i + '">' + esc(tk) + '</span>';
+    }).join(" ");
+  }
+
+  // minimalist inline icons
   var ICON = {
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 8h12l-1 12.5a1.5 1.5 0 0 1-1.5 1.4H8.5A1.5 1.5 0 0 1 7 20.5L6 8zm4 2v8m4-8v8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     heart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="#b8423f"/></svg>',
     coin:  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#c9a24b" stroke="#9c7e3c" stroke-width="1.5"/><circle cx="12" cy="12" r="5.4" fill="none" stroke="#8a6e30" stroke-width="1.1" opacity=".55"/></svg>',
     leg:   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 13.5 6.3 18.2" fill="none" stroke="#f2ece0" stroke-width="3.2" stroke-linecap="round"/><circle cx="5.3" cy="18.1" r="2.1" fill="#f2ece0"/><circle cx="6.9" cy="19.7" r="2.1" fill="#f2ece0"/><ellipse cx="15" cy="9" rx="7.2" ry="6.3" transform="rotate(-32 15 9)" fill="#8a5a36"/></svg>',
@@ -288,6 +865,7 @@
     armor: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6c2-1 3.6-.5 4.6.8.7.8 1.5 1.2 2.4 1.2s1.7-.4 2.4-1.2C15.4 5.5 17 5 19 6c.6 3 .4 5.1-.2 7.1-.9 3-3 6.3-6.8 8.4-3.8-2.1-5.9-5.4-6.8-8.4C4.6 11.1 4.4 9 5 6z" fill="#9aa0ab"/></svg>',
     pouch: '<svg viewBox="0 0 24 24" aria-hidden="true"><g fill="#9aa0ab"><path d="M8.2 8C8 5 9 3.6 10.4 4.1c.9.3 1 .8 1.6.8s.7-.5 1.6-.8C16 3.6 16 5 15.8 8z"/><path d="M9 9.2C6.5 9.4 4.8 12 4.3 15c-.5 3 .3 5.8 3.7 6.6 1.8.4 6.2.4 8 0 3.4-.8 4.2-3.6 3.7-6.6-.5-3-2.2-5.6-4.7-5.8-2-.2-4-.2-6 0z"/></g><g fill="none" stroke="#9aa0ab" stroke-width="1.5" stroke-linecap="round"><path d="M15.6 8.4C18.4 7.8 21 9.2 22.4 11.4"/><path d="M15.9 9.9C18.8 9.6 21.2 11.4 21.8 13.4"/></g></svg>'
   };
+  // first entry = weapon, second = armor, rest = additional equipment
   function eqIcon(i){ return i===0 ? ICON.sword : i===1 ? ICON.armor : ICON.pouch; }
 
   function pips(have, total, death){
@@ -310,8 +888,11 @@
       '</span></div><div class="pips">'+pips(t.have,t.need,false)+'</div></div>';
   }
 
+  // level achievements — gold square diamonds (sized to match the death circles)
   function hdashRow(have, need){ var o=""; for(var i=0;i<need;i++){ o+='<span class="ldiamond'+(i<have?" on":"")+'"></span>'; } return o; }
+  // death saves — original style circular pips (ember = remaining, hollow = spent)
   function dcircRow(have, need){ var o=""; for(var i=0;i<need;i++){ o+='<span class="dcirc'+(i<have?" on":" spent")+'"></span>'; } return o; }
+  // ability / proficiency tracks — gold vertical dashes (compact as their number grows)
   function trackVDash(label, sub, t){
     if(!t) return "";
     var p = "";
@@ -328,8 +909,9 @@
     if(/bad/.test(m)) return "mood-bad";
     return "mood-neutral";
   }
-  function hpColor(r){ return r>0.5 ? "#6fb069" : r>0.25 ? "#d8b24a" : "#c2503f"; }
+  function hpColor(r){ return r>0.75 ? "#6fb069" : r>0.5 ? "#d8b24a" : r>0.25 ? "#df8a3a" : "#c2503f"; } // green / yellow / orange / red
 
+  // mood drives the face color: good=yellow, bad=blue, neutral=grey
   function moodColor(mood){
     var m = (mood||'').toLowerCase();
     if(/good|happy/.test(m)) return "#d8b24a";
@@ -337,6 +919,7 @@
     return "#9aa0ab";
   }
 
+  // mood face — just eyes + a mouth curve, inherits color via currentColor
   function faceFor(mood){
     var m = (mood||'').toLowerCase();
     var eyes = '<circle cx="8.5" cy="9.5" r="1.5" fill="currentColor"/><circle cx="15.5" cy="9.5" r="1.5" fill="currentColor"/>';
@@ -353,18 +936,19 @@
     }
     var html = "";
 
+    // band
     var moodhp = '';
     if(s.hp!=null && s.hpMax){
       var hr = Math.max(0, Math.min(1, s.hp/s.hpMax));
       var hc = hpColor(hr);
       moodhp = '<div class="moodhp">'+
-        '<div class="hpbar lg"><span style="width:'+(hr*100)+'%;background:'+hc+'"></span></div>'+
+        '<div class="hpbar-wrap"><div class="hpbar lg" data-bar="1"><span style="width:'+(hr*100)+'%;background:'+hc+'"></span></div></div>'+
         '<span class="mood-face" style="color:'+moodColor(s.mood)+'" title="'+esc(s.mood||"Neutral")+'">'+faceFor(s.mood)+'</span>'+
         '</div>';
     }
     html += '<div class="band"><div class="name-block">'+
       '<div class="eyebrow">Adventurer of record</div>'+
-      '<h1 class="char-name">'+esc(s.name||"Unnamed Wanderer")+'</h1>'+
+      '<h1 class="char-name">'+ed('name', s.name||"Unnamed Wanderer")+'</h1>'+
       moodhp +
       '</div>';
     if(s.level!=null){
@@ -374,28 +958,37 @@
         '<circle class="lv-ring-bg" cx="50" cy="50" r="46"/>'+
         '<circle class="lv-ring-fg" cx="50" cy="50" r="46" pathLength="100" style="stroke-dasharray:'+(af*100)+' 100"/>'+
         '</svg>'+
-        '<span class="lv">Level</span><span class="num">'+esc(s.level)+'</span></div>';
+        '<span class="lv">Level</span><span class="num">'+ed('level', s.level)+'</span></div>';
     }
     html += '</div>';
 
     html += '<div class="grid">';
 
+    // identity — race & class, derived from the sheet header
     if(s.race || s.cls){
       html += '<div class="span-12"><div class="idrow">'+
-        '<div class="idcard"><div class="lab">Race</div><div class="val">'+esc(s.race||"—")+'</div></div>'+
-        '<div class="idcard"><div class="lab">Class</div><div class="val">'+esc(s.cls||"—")+'</div></div>'+
+        '<div class="idcard"><div class="lab">Race</div><div class="val">'+ed('race', s.race||"—")+'</div></div>'+
+        '<div class="idcard"><div class="lab">Class</div><div class="val">'+ed('cls', s.cls||"—")+'</div></div>'+
         '</div></div>';
     }
 
+    // vitals
     html += '<div class="span-12"><div class="vitals">';
     if(s.hp!=null && s.hpMax!=null){
-      html += '<div class="vital"><div class="lab">Health</div><div class="val"><span class="vicon">'+ICON.heart+
-        '</span><span>'+s.hp+' <small>/ '+s.hpMax+'</small></span></div></div>';
+      html += '<div class="vital health-vital"><div class="lab">Health</div><div class="val"><span class="vicon">'+ICON.heart+
+        '</span><span>'+ed('hp', s.hp, {cls:"num"})+' <span class="hpmax">/ '+ed('hpMax', s.hpMax, {cls:"num"})+'</span></span></div>'+
+        '<div class="hp-stepper"><button type="button" class="hp-step hp-up" data-hp="up" aria-label="Increase health">&#9650;</button>'+
+        '<button type="button" class="hp-step hp-dn" data-hp="dn" aria-label="Decrease health">&#9660;</button></div></div>';
     }
-    if(s.coin!=null) html += '<div class="vital"><div class="lab">Coin</div><div class="val"><span class="vicon">'+ICON.coin+'</span><span>'+esc(s.coin)+'</span></div></div>';
-    if(s.rations!=null) html += '<div class="vital"><div class="lab">Rations</div><div class="val"><span class="vicon">'+ICON.leg+'</span><span>'+esc(s.rations)+'</span></div></div>';
+    if(s.coin!=null) html += '<div class="vital step-vital"><div class="lab">Coin</div><div class="val"><span class="vicon">'+ICON.coin+'</span><span>'+ed('coin', s.coin)+'</span></div>'+
+      '<div class="hp-stepper"><button type="button" class="hp-step hp-up" data-vital="coin" data-dir="up" aria-label="Increase coin">&#9650;</button>'+
+      '<button type="button" class="hp-step hp-dn" data-vital="coin" data-dir="dn" aria-label="Decrease coin">&#9660;</button></div></div>';
+    if(s.rations!=null) html += '<div class="vital step-vital"><div class="lab">Rations</div><div class="val"><span class="vicon">'+ICON.leg+'</span><span>'+ed('rations', s.rations)+'</span></div>'+
+      '<div class="hp-stepper"><button type="button" class="hp-step hp-up" data-vital="rations" data-dir="up" aria-label="Increase rations">&#9650;</button>'+
+      '<button type="button" class="hp-step hp-dn" data-vital="rations" data-dir="dn" aria-label="Decrease rations">&#9660;</button></div></div>';
     html += '</div></div>';
 
+    // abilities
     if(s.abilities && Object.keys(s.abilities).length){
       html += '<div class="span-12"><div class="card"><h3 class="card-title">Abilities</h3><div class="abilities">';
       ["STR","DEX","CON","INT","WIS","CHA"].forEach(function(ab){
@@ -403,72 +996,79 @@
         if(!a){ return; }
         var cls = a.mod>0?"pos":a.mod<0?"neg":"";
         var sign = a.mod>0?"+":"";
-        html += '<div class="ability"><div class="ab">'+ab+'</div><div class="score">'+a.score+
-          '</div><div class="mod '+cls+'">'+sign+a.mod+'</div></div>';
+        html += '<div class="ability"><div class="ab">'+ab+'</div><div class="score">'+ed('abilities.'+ab+'.score', a.score)+
+          '</div><div class="mod '+cls+'">'+ed('abilities.'+ab+'.mod', sign+a.mod)+'</div></div>';
       });
       html += '</div></div></div>';
     }
 
-    if(s.profs && s.profs.length){
-      html += '<div class="span-12"><div class="card"><h3 class="card-title">Proficiencies</h3><div class="chips">';
-      s.profs.forEach(function(p){ html += '<span class="chip">'+esc(p.name)+'<b>+'+p.bonus+'</b></span>'; });
-      html += '</div></div></div>';
-    }
+    // proficiencies — chips, draggable, with a trailing + to add
+    html += '<div class="span-12"><div class="card"><h3 class="card-title">Proficiencies</h3><div class="chips">';
+    (s.profs||[]).forEach(function(p, i){
+      html += '<span class="chip" draggable="true" data-drag="profs" data-index="'+i+'" data-del="profs.'+i+'">'+
+        edph('profs.'+i+'.name', p.name, 'New proficiency')+'<b>'+ed('profs.'+i+'.bonus', '+'+(p.bonus||0))+'</b></span>';
+    });
+    html += '<button type="button" class="add-chip" data-add="profs" aria-label="Add proficiency">+</button>';
+    html += '</div></div></div>';
 
-    if(s.equipment && s.equipment.length){
-      html += '<div class="span-12"><div class="card"><h3 class="card-title">Equipment</h3>';
-      s.equipment.forEach(function(e, i){
-        html += '<div class="entry eq"><span class="eqicon">'+eqIcon(i)+'</span>'+
-          '<div class="e-body"><div class="e-name">'+esc(e.name)+'</div>'+
-          (e.eff?'<div class="e-eff">'+esc(e.eff)+'</div>':'')+'</div></div>';
-      });
-      html += '</div></div>';
-    }
+    // equipment — weapon (0) & armor (1) locked; the rest draggable; + in the title
+    html += '<div class="span-12"><div class="card"><h3 class="card-title">Equipment<button type="button" class="add-btn" data-add="equipment" aria-label="Add equipment">+</button></h3>';
+    (s.equipment||[]).forEach(function(e, i){
+      var drag = (i>=2) ? ' draggable="true" data-drag="equipment" data-index="'+i+'"' : '';
+      html += '<div class="entry eq" data-del="equipment.'+i+'"'+drag+'><span class="eqicon">'+eqIcon(i)+'</span>'+
+        '<div class="e-body"><div class="e-name">'+edph('equipment.'+i+'.name', e.name, 'New equipment')+'</div>'+
+        '<div class="e-eff">'+edph('equipment.'+i+'.eff', e.eff, 'Add a description…')+'</div></div></div>';
+    });
+    html += '</div></div>';
 
-    if(s.traits && s.traits.length){
-      html += '<div class="span-12"><div class="card"><h3 class="card-title">Traits</h3>';
-      s.traits.forEach(function(t){
-        html += '<div class="entry"><div class="e-name">'+esc(t.name)+'</div>'+
-          (t.eff?'<div class="e-eff">'+esc(t.eff)+'</div>':'')+'</div>';
-      });
-      html += '</div></div>';
-    }
+    // traits — draggable rows, + in the title
+    html += '<div class="span-12"><div class="card"><h3 class="card-title">Traits<button type="button" class="add-btn" data-add="traits" aria-label="Add trait">+</button></h3>';
+    (s.traits||[]).forEach(function(t, i){
+      html += '<div class="entry" draggable="true" data-drag="traits" data-index="'+i+'" data-del="traits.'+i+'">'+
+        '<div class="e-name">'+edph('traits.'+i+'.name', t.name, 'New trait')+'</div>'+
+        '<div class="e-eff">'+edph('traits.'+i+'.eff', t.eff, 'Add a description…')+'</div></div>';
+    });
+    html += '</div></div>';
 
-    if(s.actions && s.actions.length){
-      html += '<div class="span-12"><div class="card"><h3 class="card-title">Unique Actions</h3>';
-      s.actions.forEach(function(t){
-        html += '<div class="entry"><div class="e-name">'+esc(t.name)+'</div>'+
-          (t.eff?'<div class="e-eff">'+esc(t.eff)+'</div>':'')+'</div>';
-      });
-      html += '</div></div>';
-    }
+    // unique actions — draggable rows, + in the title
+    html += '<div class="span-12"><div class="card"><h3 class="card-title">Unique Actions<button type="button" class="add-btn" data-add="actions" aria-label="Add unique action">+</button></h3>';
+    (s.actions||[]).forEach(function(t, i){
+      html += '<div class="entry" draggable="true" data-drag="actions" data-index="'+i+'" data-del="actions.'+i+'">'+
+        '<div class="e-name">'+edph('actions.'+i+'.name', t.name, 'New action')+'</div>'+
+        '<div class="e-eff">'+edph('actions.'+i+'.eff', t.eff, 'Add a description…')+'</div></div>';
+    });
+    html += '</div></div>';
 
-    if(s.inventory && s.inventory.length){
-      html += '<div class="span-12"><div class="card"><h3 class="card-title">Inventory</h3><div class="chips">';
-      s.inventory.forEach(function(it){ html += '<span class="chip">'+esc(it)+'</span>'; });
-      html += '</div></div></div>';
-    }
+    // inventory — oval bubbles of item names/quantities, draggable, with a trailing + (sits above Field Report)
+    html += '<div class="span-12"><div class="card"><h3 class="card-title">Inventory</h3><div class="chips">';
+    (s.inventory||[]).forEach(function(it, i){
+      html += '<span class="chip" draggable="true" data-drag="inventory" data-index="'+i+'" data-del="inventory.'+i+'">'+edph('inventory.'+i, it, 'New item')+'</span>';
+    });
+    html += '<button type="button" class="add-chip" data-add="inventory" aria-label="Add item">+</button>';
+    html += '</div></div></div>';
 
+    // field report — always visible once a character exists
     html += '<div class="span-12"><div class="card"><h3 class="card-title">Field Report</h3>';
     html += '<div class="objective"><div class="lab">Objective</div><div class="txt">'+
-      (s.objective ? esc(s.objective) : '<span class="placeholder-text">No objective recorded yet</span>')+'</div></div>';
+      edph('objective', s.objective, 'Add an objective…')+'</div></div>';
     html += '<div style="margin-top:14px">';
-    [['Location',s.location],['Time',s.time],['Effects',s.effects]].forEach(function(p){
+    [['Location','location',s.location],['Time','time',s.time],['Effects','effects',s.effects]].forEach(function(p){
       html += '<div class="kv"><span class="k">'+p[0]+'</span><span class="v">'+
-        (p[1] ? esc(p[1]) : '<span class="placeholder-text">—</span>')+'</span></div>';
+        edph(p[1], p[2], '—')+'</span></div>';
     });
     html += '</div>';
     html += '<div style="margin-top:14px"><div class="card-title" style="font-size:12px">Recent Events</div>';
     if(s.events && s.events.length){
-      html += '<ul class="events">';
-      s.events.forEach(function(e){ html += '<li>'+esc(e)+'</li>'; });
-      html += '</ul>';
+      html += '<div class="edit ev-blob" data-edit="events" data-multiline="1">';
+      s.events.forEach(function(e){ html += '<div class="ev-line">'+esc(e)+'</div>'; });
+      html += '</div>';
     } else {
-      html += '<div class="placeholder-text">No recent events recorded yet</div>';
+      html += '<div class="edit ev-blob is-ph" data-edit="events" data-multiline="1" data-ph="1"><div class="ev-line">Add an event…</div></div>';
     }
     html += '</div>';
     html += '</div></div>';
 
+    // progression — full width, anchored to the bottom
     var abilityList = s.abilityXP || [];
     var profList = s.profXP || [];
     var hasProg = s.levelXP || abilityList.length || profList.length || s.death;
@@ -476,22 +1076,25 @@
       html += '<div class="span-12"><div class="card"><h3 class="card-title">Progression</h3>';
       html += '<div class="prog-grid">';
 
-      function progCell(label, sub, t, kind){
+      function progCell(label, sub, t, kind, pathBase){
         var markers;
         if(kind === "death")      markers = '<div class="ach-row">'+dcircRow(t.have,t.need)+'</div>';
-        else if(kind === "level") markers = '<div class="ach-row">'+hdashRow(t.have,t.need)+'</div>';
+        else if(kind === "level") markers = '<div class="ach-row"><span class="lvl-icons">'+hdashRow(t.have,t.need)+'</span></div>';
         else {
           var p = ""; for(var i=0;i<t.need;i++){ p += '<span class="vdash'+(i<t.have?" on":"")+'"></span>'; }
           markers = '<div class="vdash-row">'+p+'</div>';
         }
-        return '<div class="prog-cell"><div class="track-head"><span class="t">'+esc(label)+
-          (sub?' <em>'+esc(sub)+'</em>':'')+'</span><span class="c">'+t.have+' / '+t.need+'</span></div>'+markers+'</div>';
+        var step = '<span class="prog-steppers">'+
+          '<button type="button" class="prog-step" data-prog="'+pathBase+'" data-dir="dn" aria-label="Decrease '+esc(label)+'">&#8722;</button>'+
+          '<button type="button" class="prog-step" data-prog="'+pathBase+'" data-dir="up" aria-label="Increase '+esc(label)+'">+</button></span>';
+        return '<div class="prog-cell" data-prog-cell="'+pathBase+'"><div class="track-head"><span class="t">'+esc(label)+
+          (sub?' <em>'+esc(sub)+'</em>':'')+'</span><span class="c">'+t.have+' / '+t.need+'</span>'+step+'</div>'+markers+'</div>';
       }
 
-      if(s.death)   html += progCell("Death Saves", "remaining", s.death, "death");
-      if(s.levelXP) html += progCell("Level", "achievements", s.levelXP, "level");
-      abilityList.forEach(function(x){ html += progCell(x.name, "ability", x, "vdash"); });
-      profList.forEach(function(x){ html += progCell(x.name, "proficiency", x, "vdash"); });
+      if(s.death)   html += progCell("Death Saves", "remaining", s.death, "death", "death.have");
+      if(s.levelXP) html += progCell("Level", "achievements", s.levelXP, "level", "levelXP.have");
+      abilityList.forEach(function(x, i){ html += progCell(x.name, "ability", x, "vdash", "abilityXP."+i+".have"); });
+      profList.forEach(function(x, i){ html += progCell(x.name, "proficiency", x, "vdash", "profXP."+i+".have"); });
 
       html += '</div></div></div>';
     }
@@ -500,6 +1103,7 @@
     return html;
   }
 
+  // ---------- wiring ----------
   var stage = document.getElementById("stage");
   var input = document.getElementById("input");
   var feed  = document.getElementById("feed");
@@ -518,7 +1122,7 @@
       el.querySelector(".slot-name").textContent = data ? (data.name || "Unnamed") : "Empty";
       el.classList.toggle("filled", !!data);
       el.classList.toggle("active", activeSlot===i);
-      var clr = el.querySelector(".slot-clear"); if(clr) clr.disabled = !data;
+      var tr = el.querySelector(".slot-trash"); if(tr) tr.disabled = !data;
     }
   }
 
@@ -527,7 +1131,7 @@
     if(!raw.trim()){ setFeed("Paste a sheet or status first.", "warn"); return; }
     try{
       state = parse(raw, state || {abilities:{}});
-      if(activeSlot !== null) slots[activeSlot] = copy(state);
+      if(activeSlot !== null) slots[activeSlot] = copy(state);   // keep the loaded slot in sync
       draw(); renderSlots(); persist();
       setFeed("Updated. Each paste refines this character.", "ok");
       input.value = "";
@@ -536,6 +1140,496 @@
     }
   });
 
+  // gold sparkle burst on left click; snap button back to unhovered until the mouse re-enters
+  (function(){
+    var rb = document.getElementById("render");
+    rb.addEventListener("click", function(){
+      rb.classList.remove("animate");
+      void rb.offsetWidth;                 // reflow so the animation can replay on rapid clicks
+      rb.classList.add("animate", "clicked");
+      setTimeout(function(){ rb.classList.remove("animate"); }, 760);
+    });
+    rb.addEventListener("mouseleave", function(){ rb.classList.remove("clicked"); });
+  })();
+
+  // ---------- inline live editing ----------
+  function resolve(root, path){
+    var parts = String(path).split(".");
+    var obj = root;
+    for(var i=0;i<parts.length-1;i++){
+      var k = parts[i];
+      obj = obj[/^\d+$/.test(k) ? Number(k) : k];
+      if(obj == null) return null;
+    }
+    var last = parts[parts.length-1];
+    return { obj: obj, key: /^\d+$/.test(last) ? Number(last) : last };
+  }
+
+  // write an edited value back into state with the right type/side effects
+  function applyEdit(path, raw, tok){
+    raw = String(raw).replace(/\s+/g, " ").trim();
+    var lm = path.match(/^(events|inventory)\.\d+$/);
+    if(lm && !state[lm[1]]) state[lm[1]] = [];   // first entry into an absent list
+    var r = resolve(state, path);
+    if(!r) return false;
+
+    // equipment effect: replace one whitespace token (dice apart from damage type, "AC:" apart from its value)
+    if(tok != null && /\.eff$/.test(path)){
+      var toks = String(r.obj[r.key] || "").split(/\s+/);
+      var idx = Number(tok);
+      if(idx >= 0 && idx < toks.length){ toks[idx] = raw; r.obj[r.key] = toks.join(" "); }
+      return true;
+    }
+    // ability score → recompute modifier, preserving any manual override (treated as an item/status offset)
+    if(/\.score$/.test(path)){
+      var sc = parseInt(raw, 10); if(isNaN(sc)) return false;
+      sc = Math.max(1, Math.min(30, sc));
+      var offset = r.obj.mod - Math.floor((r.obj.score - 10) / 2);   // current bonus beyond the score's base
+      r.obj.score = sc;
+      r.obj.mod = Math.floor((sc - 10) / 2) + offset;                // new base + preserved offset
+      return true;
+    }
+    if(/\.mod$/.test(path) || /\.bonus$/.test(path)){
+      var m = parseInt(String(raw).replace(/[^\-0-9]/g, ""), 10);
+      r.obj[r.key] = isNaN(m) ? 0 : m; return true;                  // manual mod becomes the new baseline offset
+    }
+    if(/(^|\.)(hp|hpMax|level|coin)$/.test(path)){
+      var n = parseInt(String(raw).replace(/[^\-0-9]/g, ""), 10);
+      if(isNaN(n)) n = 0;
+      if(/(hp|hpMax|level)$/.test(path)) n = Math.max(0, n);
+      if(/level$/.test(path)) n = Math.max(1, n);                    // level is at least 1
+      r.obj[r.key] = n;
+      if(path === "level" && state.levelXP) state.levelXP.have = 0;  // editing level resets its achievements
+      return true;
+    }
+    if(/\.have$/.test(path)){
+      var h = parseInt(raw, 10); if(isNaN(h)) h = 0;
+      var nr = resolve(state, path.replace(/\.have$/, ".need"));
+      var need = nr ? nr.obj[nr.key] : Infinity;
+      r.obj[r.key] = Math.max(0, Math.min(need, h)); return true;
+    }
+    if(path === "rations"){ var d = String(raw).replace(/[^\d]/g, ""); r.obj[r.key] = d.length ? d : raw; return true; }
+    r.obj[r.key] = raw; return true;
+  }
+
+  // palette per variant; rainbow cycles through all hues
+  function sparkColors(variant){
+    if(variant === "rainbow") return ["#e0533f","#df8a3a","#d8b24a","#6fb069","#4aa3c9","#5b6fc9","#9b5bc9"];
+    if(variant === "green")   return ["#6fb069","#8fc98a"];
+    if(variant === "red")     return ["#c2503f","#d77a6a"];
+    if(variant === "grey")    return ["#9aa0ab","#c2c7d0"];
+    return ["#c9a24b","#e0c074"];   // gold
+  }
+
+  // each call spawns an overlay full of dots; every dot gets a random direction, so no two bursts look alike
+  function sparkle(target, variant, health){
+    if(!target) return;
+    var rect = target.getBoundingClientRect();
+    if(rect.width === 0 && rect.height === 0) return;
+    var fx = document.createElement("div");
+    fx.className = "sparkfx" + (health ? " spark-health" : "");
+    fx.style.left = rect.left + "px"; fx.style.top = rect.top + "px";
+    fx.style.width = rect.width + "px"; fx.style.height = rect.height + "px";
+    var cols = sparkColors(variant);
+    fx.style.setProperty("--spark", cols[0]);
+    var n = health ? 16 : (variant === "rainbow" ? 15 : 11);
+    for(var i = 0; i < n; i++){
+      var dot = document.createElement("span");
+      dot.className = "spark-dot";
+      var ang = Math.random() * Math.PI * 2;                                  // random direction
+      var dist = (health ? 6 : 15) + Math.random() * (health ? 17 : 28);      // random distance
+      dot.style.setProperty("--dx", (Math.cos(ang) * dist).toFixed(1) + "px");
+      dot.style.setProperty("--dy", (Math.sin(ang) * dist).toFixed(1) + "px");
+      var sz = (health ? 2.4 : 3) + Math.random() * (health ? 2.6 : 3.6);
+      dot.style.width = sz.toFixed(1) + "px"; dot.style.height = sz.toFixed(1) + "px";
+      var c = cols[Math.floor(Math.random() * cols.length)];
+      dot.style.background = c; dot.style.color = c;
+      var sx = health ? Math.random() * rect.width : rect.width / 2 + (Math.random() - 0.5) * rect.width * 0.5;
+      var sy = health ? rect.height / 2 : rect.height / 2 + (Math.random() - 0.5) * rect.height * 0.5;
+      dot.style.left = sx.toFixed(1) + "px"; dot.style.top = sy.toFixed(1) + "px";
+      dot.style.animationDelay = (Math.random() * 70).toFixed(0) + "ms";
+      fx.appendChild(dot);
+    }
+    document.body.appendChild(fx);
+    setTimeout(function(){ if(fx.parentNode) fx.parentNode.removeChild(fx); }, 1100);
+  }
+
+  function syncSlot(){ if(activeSlot !== null && slots[activeSlot]) slots[activeSlot] = copy(state); }
+  function hpRatio(){ return (state && state.hp != null && state.hpMax) ? state.hp / state.hpMax : null; }
+  function sparkleHealth(beforeRatio){
+    var after = hpRatio();
+    var bar = stage.querySelector(".hpbar-wrap");
+    sparkle(bar, (after != null && beforeRatio != null && after < beforeRatio) ? "red" : "green", true);
+  }
+
+  var editingEl = null;
+  var coarsePointer = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  function beginEdit(el){
+    if(editingEl) return;                // one field at a time
+    editingEl = el;
+    var path  = el.getAttribute("data-edit");
+    var tok   = el.getAttribute("data-tok");
+    var wasPh = el.getAttribute("data-ph") === "1";
+    var multiline = el.getAttribute("data-multiline") === "1";
+    var before;
+    if(multiline){
+      before = (state.events || []).join("\n");
+      el.classList.remove("is-ph");
+      if(wasPh){ var ph = el.querySelector(".ev-line"); if(ph) ph.textContent = ""; }   // empty bullet to type into
+      if(!el.querySelector(".ev-line")){ var d0 = document.createElement("div"); d0.className = "ev-line"; el.appendChild(d0); }
+    } else {
+      before = wasPh ? "" : el.textContent;
+      if(wasPh){ el.textContent = ""; el.classList.remove("is-ph"); }
+    }
+    var dragRow = el.closest("[data-drag]");
+    if(dragRow) dragRow.setAttribute("draggable", "false");   // avoid drag fighting text-selection
+    el.classList.add("editing");
+    el.setAttribute("contenteditable", "true");
+    el.focus();
+    var sel = window.getSelection();
+    if(multiline){                                            // caret at the end (don't select everything)
+      var er = document.createRange(); er.selectNodeContents(el); er.collapse(false);
+      sel.removeAllRanges(); sel.addRange(er);
+    } else {
+      var rng = document.createRange(); rng.selectNodeContents(el);
+      sel.removeAllRanges(); sel.addRange(rng);
+    }
+
+    // split the current bullet at the caret into a new .ev-line bullet
+    function newBullet(){
+      var s = window.getSelection(); if(!s.rangeCount) return;
+      var range = s.getRangeAt(0);
+      var node = range.startContainer;
+      var line = node.nodeType === 3 ? node.parentElement : node;
+      while(line && line !== el && !(line.classList && line.classList.contains("ev-line"))) line = line.parentElement;
+      if(!line || line === el){ line = document.createElement("div"); line.className = "ev-line"; el.appendChild(line); }
+      var pre = document.createRange(); pre.selectNodeContents(line); pre.setEnd(range.startContainer, range.startOffset);
+      var offset = pre.toString().length;
+      var full = line.textContent;
+      line.textContent = full.slice(0, offset);
+      var nl = document.createElement("div"); nl.className = "ev-line"; nl.textContent = full.slice(offset);
+      if(line.nextSibling) el.insertBefore(nl, line.nextSibling); else el.appendChild(nl);
+      var r = document.createRange(); r.setStart(nl, 0); r.collapse(true);
+      s.removeAllRanges(); s.addRange(r);
+    }
+
+    var done = false;
+    function finish(commit){
+      if(done) return; done = true;
+      el.removeAttribute("contenteditable");
+      el.removeEventListener("keydown", onKey);
+      el.removeEventListener("blur", onBlur);
+      editingEl = null;
+
+      if(multiline){
+        var lines = [];
+        el.querySelectorAll(".ev-line").forEach(function(d){
+          d.textContent.split(/\n/).forEach(function(x){ var t = x.replace(/\s+/g, " ").trim(); if(t) lines.push(t); });
+        });
+        var joined = lines.join("\n");
+        if(!commit || joined === before){ draw(); return; }
+        pushUndo();
+        state.events = lines;
+        syncSlot(); draw(); persist();
+        sparkle(stage.querySelector('[data-edit="events"]'), "gold");
+        return;
+      }
+
+      var after = el.textContent.replace(/\s+/g, " ").trim();
+      if(!commit || after === String(before).trim()){ draw(); return; }   // nothing changed
+      pushUndo();
+      var beforeRatio = hpRatio();
+      var oldHpMax = state.hpMax;
+      applyEdit(path, after, tok);
+      syncSlot(); draw(); persist();
+      if(path === "hpMax"){
+        sparkle(stage.querySelector('[data-edit="hpMax"]'), (state.hpMax > oldHpMax) ? "rainbow" : "grey");  // higher = rainbow, lower = grey
+      } else if(path === "hp"){
+        sparkleHealth(beforeRatio);   // bar: green if fuller, red if emptier
+      } else {
+        var q = '[data-edit="' + path + '"]' + (tok != null ? '[data-tok="' + tok + '"]' : '');
+        sparkle(stage.querySelector(q), "gold");
+      }
+    }
+    function onKey(e){
+      if(multiline){
+        // shift+enter (any device) or plain enter on touch -> new bullet; plain enter on desktop -> commit; blur (keyboard dismiss) -> commit
+        if(e.key === "Enter" && (e.shiftKey || coarsePointer)){ e.preventDefault(); newBullet(); }
+        else if(e.key === "Enter"){ e.preventDefault(); finish(true); }
+        else if(e.key === "Escape"){ e.preventDefault(); finish(false); }
+        return;
+      }
+      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); finish(true); }   // commit
+      else if(e.key === "Escape"){ e.preventDefault(); el.textContent = before; finish(false); }
+    }
+    function onBlur(){ finish(true); }   // mobile keyboard dismiss also commits
+    el.addEventListener("keydown", onKey);
+    el.addEventListener("blur", onBlur);
+  }
+
+  document.getElementById("stage").addEventListener("dblclick", function(ev){
+    var el = ev.target.closest(".edit");
+    if(!el || el.hasAttribute("data-glyph")) return;
+    beginEdit(el);
+  });
+
+  function bumpHp(delta){
+    if(!state || state.hp == null) return;
+    var nv = Math.max(0, state.hp + delta);
+    if(nv === state.hp) return;
+    pushUndo();
+    var beforeRatio = hpRatio();
+    state.hp = nv;
+    syncSlot(); draw(); persist();
+    sparkleHealth(beforeRatio);                                                       // bar glow
+    sparkle(stage.querySelector('[data-edit="hp"]'), delta < 0 ? "red" : "green");    // value: green up, red down
+  }
+
+  function bumpVital(name, dir){
+    if(!state) return;
+    var step = dir === "up" ? 1 : -1, cur, nv;
+    if(name === "coin"){ cur = parseInt(state.coin, 10) || 0; nv = Math.max(0, cur + step); if(nv === cur) return; pushUndo(); state.coin = nv; }
+    else if(name === "rations"){ cur = parseInt(state.rations, 10) || 0; nv = Math.max(0, cur + step); if(nv === cur) return; pushUndo(); state.rations = String(nv); }
+    else return;
+    syncSlot(); draw(); persist();
+    sparkle(stage.querySelector('[data-edit="' + name + '"]'), "gold");   // generic gold sparkle on the value
+  }
+
+  var progAnimating = false;
+
+  // animated level-up: rainbow numbers, idle, unfill R->L, then either grow the requirement (ability/prof) or raise the character level
+  function levelUpProg(pathBase, isLevel){
+    var cell = stage.querySelector('[data-prog-cell="' + pathBase + '"]');
+    if(!cell) return;
+    progAnimating = true;
+    cell.classList.add("tapped");
+    sparkle(cell.querySelector(".c"), "rainbow");
+    var sel = isLevel ? ".ldiamond" : ".vdash";
+    var icons = Array.prototype.slice.call(cell.querySelectorAll(sel));
+    if(isLevel){                                              // rainbow glow on each diamond (follows the shape, fills the gaps) = level up
+      cell.querySelectorAll(".ldiamond").forEach(function(d){ d.classList.remove("dglow"); void d.offsetWidth; d.classList.add("dglow"); });
+    }
+    var STEP = 160;
+    setTimeout(function(){                                   // 2s idle, then unfill right -> left
+      var filled = icons.filter(function(ic){ return ic.classList.contains("on"); }).reverse();
+      filled.forEach(function(ic, k){ setTimeout(function(){ ic.classList.remove("on"); }, k * STEP); });
+      setTimeout(function(){
+        var r  = resolve(state, pathBase);
+        var nr = resolve(state, pathBase.replace(/\.have$/, ".need"));
+        if(isLevel){
+          state.level = (state.level || 1) + 1;              // raise the character level
+          if(r) r.obj[r.key] = 0;                            // achievements reset, requirement stays 3
+        } else {
+          if(nr) nr.obj[nr.key] = nr.obj[nr.key] + 1;        // total required grows
+          if(r)  r.obj[r.key] = 0;
+        }
+        syncSlot(); draw(); persist();
+        progAnimating = false;
+        if(isLevel){
+          sparkle(stage.querySelector('[data-edit="level"]'), "gold");   // celebrate the new level on the badge
+        } else {
+          var nc = stage.querySelector('[data-prog-cell="' + pathBase + '"]');
+          if(nc){
+            nc.classList.add("tapped");
+            var vds = nc.querySelectorAll(".vdash");
+            if(vds.length) sparkle(vds[vds.length - 1], "gold");          // the new empty icon
+          }
+        }
+      }, filled.length * STEP + 240);
+    }, 2000);
+  }
+
+  function bumpProg(pathBase, dir){
+    if(progAnimating) return;
+    var abilProf = /^(abilityXP|profXP)\./.test(pathBase);
+    var isLevel  = (pathBase === "levelXP.have");
+    var isDeath  = (pathBase === "death.have");
+    var r = resolve(state, pathBase); if(!r) return;
+    var nr = resolve(state, pathBase.replace(/\.have$/, ".need"));
+    var need = nr ? nr.obj[nr.key] : 99;
+    var have = r.obj[r.key];
+
+    function flash(variant){
+      var c = stage.querySelector('[data-prog-cell="' + pathBase + '"]');
+      if(c){ c.classList.add("tapped"); sparkle(c.querySelector(".c"), variant); }
+    }
+
+    // death saves: clamped, rainbow on up / grey on down, no leveling
+    if(isDeath){
+      var dv = Math.max(0, Math.min(need, have + (dir === "up" ? 1 : -1)));
+      if(dv === have) return;
+      pushUndo();
+      r.obj[r.key] = dv; syncSlot(); draw(); persist();
+      flash(dir === "up" ? "rainbow" : "grey");
+      return;
+    }
+
+    // ability/prof + level: reaching the requirement levels up
+    if((abilProf || isLevel) && dir === "up" && have + 1 >= need){
+      pushUndo();
+      r.obj[r.key] = need;                                   // fill the last icon first
+      syncSlot(); draw(); persist();
+      levelUpProg(pathBase, isLevel);
+      return;
+    }
+    // ability/prof down-tick at 0: requirement steps down (degradation)
+    if(abilProf && dir === "dn" && have <= 0){
+      if(need <= 3) return;
+      pushUndo();
+      nr.obj[nr.key] = need - 1;
+      r.obj[r.key]   = need - 2;                             // e.g. 0/4 -> 2/3
+      syncSlot(); draw(); persist();
+      flash("grey");
+      return;
+    }
+    // level down-tick at 0/3: drop a character level, revert to 2/3
+    if(isLevel && dir === "dn" && have <= 0){
+      if((state.level || 1) <= 1) return;                   // never below level 1
+      pushUndo();
+      state.level = (state.level || 1) - 1;
+      r.obj[r.key] = need - 1;                               // 2/3
+      syncSlot(); draw(); persist();
+      flash("grey");
+      return;
+    }
+
+    var v = Math.max(0, Math.min(need, have + (dir === "up" ? 1 : -1)));
+    if(v === have) return;
+    pushUndo();
+    r.obj[r.key] = v;
+    syncSlot(); draw(); persist();
+    flash(dir === "dn" ? "grey" : "gold");   // every progression minus is grey, plus is gold
+  }
+
+  // ---------- add / reorder list entries ----------
+  function ensureArr(group){ if(!state[group]) state[group] = []; return state[group]; }
+
+  function addEntry(group){
+    var arr = ensureArr(group);
+    pushUndo();
+    arr.push(group === "profs" ? {name:"", bonus:0} : group === "inventory" ? "" : {name:"", eff:""});
+    var i = arr.length - 1;
+    syncSlot(); draw(); persist();
+    var path = (group === "inventory") ? "inventory." + i : group + "." + i + ".name";
+    var el = stage.querySelector('[data-edit="' + path + '"]');
+    if(el){ el.scrollIntoView({block:"nearest"}); beginEdit(el); }   // drop the user straight into editing
+  }
+
+  // `to` is an insertion index into the array (0..length). Dropping back onto the origin is a no-op.
+  function moveItem(group, from, to){
+    var arr = state[group]; if(!arr) return;
+    if(group === "equipment"){ if(from < 2) return; to = Math.max(2, to); }   // weapon & armor stay put
+    if(from < 0 || from >= arr.length) return;
+    to = Math.max(0, Math.min(arr.length, to));
+    if(to === from || to === from + 1) return;                                 // same slot -> leave it be
+    pushUndo();
+    var item = arr.splice(from, 1)[0];
+    if(to > from) to--;                                                        // account for the removal
+    arr.splice(to, 0, item);
+    syncSlot(); draw(); persist();
+  }
+
+  var dragSrc = null;     // { group, from }
+  var dropTo  = null;     // insertion index under the cursor
+  function clearDragLines(){ stage.querySelectorAll(".drag-before, .drag-after").forEach(function(el){ el.classList.remove("drag-before", "drag-after"); }); }
+  function cleanupDrag(){
+    dragSrc = null; dropTo = null; clearDragLines();
+    stage.querySelectorAll(".dragging").forEach(function(el){ el.classList.remove("dragging"); });
+  }
+  stage.addEventListener("dragstart", function(ev){
+    var row = ev.target.closest("[data-drag]");
+    if(!row || editingEl){ if(editingEl) ev.preventDefault(); return; }
+    dragSrc = { group: row.getAttribute("data-drag"), from: +row.getAttribute("data-index") };
+    dropTo = null;
+    row.classList.add("dragging");
+    ev.dataTransfer.effectAllowed = "move";
+    try{ ev.dataTransfer.setData("text/plain", ""); }catch(e){}
+  });
+  stage.addEventListener("dragover", function(ev){
+    if(!dragSrc) return;
+    var row = ev.target.closest("[data-drag]");
+    if(!row || row.getAttribute("data-drag") !== dragSrc.group) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "move";
+    var idx = +row.getAttribute("data-index");
+    var rect = row.getBoundingClientRect();
+    var horizontal = row.classList.contains("chip");
+    var before = horizontal ? (ev.clientX < rect.left + rect.width / 2)
+                            : (ev.clientY < rect.top + rect.height / 2);
+    clearDragLines();
+    row.classList.add(before ? "drag-before" : "drag-after");   // line can sit on either edge, incl. the outermost
+    dropTo = before ? idx : idx + 1;
+  });
+  stage.addEventListener("drop", function(ev){
+    if(dragSrc && dropTo != null){ ev.preventDefault(); moveItem(dragSrc.group, dragSrc.from, dropTo); }
+    cleanupDrag();
+  });
+  stage.addEventListener("dragend", cleanupDrag);
+
+  // ---------- right-click / long-press to delete a list entry ----------
+  function deleteEntry(delPath){
+    var m = String(delPath).match(/^(\w+)\.(\d+)$/); if(!m) return;
+    var group = m[1], idx = +m[2];
+    if(!state[group] || idx < 0 || idx >= state[group].length) return;
+    pushUndo();
+    state[group].splice(idx, 1);
+    syncSlot(); draw(); persist();
+  }
+
+  var trashFab = document.createElement("button");
+  trashFab.className = "trash-fab"; trashFab.hidden = true; trashFab.type = "button";
+  trashFab.setAttribute("aria-label", "Delete"); trashFab.innerHTML = ICON.trash;
+  document.body.appendChild(trashFab);
+  var trashTarget = null;
+
+  function showTrash(el){
+    var delPath = el.getAttribute("data-del"); if(!delPath) return;
+    trashTarget = delPath;
+    var rect = el.getBoundingClientRect();
+    var size = 26;
+    if(el.classList.contains("chip")){            // bubbles: top-right corner
+      trashFab.style.left = (rect.right - size / 2) + "px";
+      trashFab.style.top  = (rect.top - size / 2) + "px";
+    } else {                                       // entries: far right, vertically centered
+      trashFab.style.left = (rect.right - size - 4) + "px";
+      trashFab.style.top  = (rect.top + (rect.height - size) / 2) + "px";
+    }
+    trashFab.hidden = false;
+    trashFab.classList.remove("pop");
+    void trashFab.offsetWidth;     // reflow so the ease-in plays again even when already visible
+    trashFab.classList.add("pop");
+  }
+  function hideTrash(){ trashFab.hidden = true; trashTarget = null; }
+
+  stage.addEventListener("contextmenu", function(ev){
+    var el = ev.target.closest("[data-del]");
+    if(!el) return;
+    ev.preventDefault();
+    showTrash(el);
+  });
+  trashFab.addEventListener("click", function(ev){
+    ev.stopPropagation();
+    if(trashTarget) deleteEntry(trashTarget);
+    hideTrash();
+  });
+  document.addEventListener("click", function(ev){
+    if(ev.target.closest(".trash-fab")) return;
+    if(!trashFab.hidden) hideTrash();
+  });
+  window.addEventListener("scroll", function(){ if(!trashFab.hidden) hideTrash(); }, true);
+
+  // long-press (mobile) reveals the same trash control
+  var lpTimer = null;
+  stage.addEventListener("touchstart", function(ev){
+    var el = ev.target.closest("[data-del]");
+    if(!el) return;
+    lpTimer = setTimeout(function(){ lpTimer = null; showTrash(el); }, 500);
+  }, {passive:true});
+  function cancelLongPress(){ if(lpTimer){ clearTimeout(lpTimer); lpTimer = null; } }
+  stage.addEventListener("touchmove", cancelLongPress, {passive:true});
+  stage.addEventListener("touchend", cancelLongPress);
+  stage.addEventListener("touchcancel", cancelLongPress);
+
   function loadExample(){
     state = parse(EXAMPLE, {abilities:{}});
     if(activeSlot !== null) slots[activeSlot] = copy(state);
@@ -543,8 +1637,59 @@
     setFeed("Example loaded.", "ok");
   }
 
+  // delegated clicks inside the dashboard: example loader, health arrows, progression steppers, mobile tap-to-show
   document.getElementById("stage").addEventListener("click", function(ev){
-    if(ev.target.closest(".load-example")) loadExample();
+    if(ev.target.closest(".load-example")){ loadExample(); return; }
+    var add = ev.target.closest("[data-add]");
+    if(add){ addEntry(add.getAttribute("data-add")); return; }
+    if(ev.target.closest(".hp-step")) return;   // health/coin/ration arrows are driven by press-and-hold below
+    var ps = ev.target.closest(".prog-step");
+    if(ps){ bumpProg(ps.getAttribute("data-prog"), ps.getAttribute("data-dir")); return; }
+    var pc = ev.target.closest(".prog-cell");
+    stage.querySelectorAll(".prog-cell.tapped").forEach(function(c){ if(c !== pc) c.classList.remove("tapped"); });
+    if(pc) pc.classList.toggle("tapped");
+  });
+
+  // press-and-hold to auto-repeat the health / coin / ration arrows (progression steppers are single-click only)
+  (function(){
+    var holdTo = null, holdIv = null;
+    function stopHold(){ if(holdTo){ clearTimeout(holdTo); holdTo = null; } if(holdIv){ clearInterval(holdIv); holdIv = null; } }
+    document.getElementById("stage").addEventListener("pointerdown", function(ev){
+      var btn = ev.target.closest(".hp-step");
+      if(!btn) return;
+      ev.preventDefault();
+      var action;
+      if(btn.hasAttribute("data-vital")){
+        var nm = btn.getAttribute("data-vital"), dr = btn.getAttribute("data-dir");
+        action = function(){ bumpVital(nm, dr); };
+      } else {
+        var d = btn.getAttribute("data-hp") === "up" ? 1 : -1;
+        action = function(){ bumpHp(d); };
+      }
+      action();                                                   // fire immediately
+      holdTo = setTimeout(function(){ holdIv = setInterval(action, 110); }, 350);   // then auto-repeat while held
+    });
+    window.addEventListener("pointerup", stopHold);
+    window.addEventListener("pointercancel", stopHold);
+    window.addEventListener("blur", stopHold);
+  })();
+
+  // ---------- undo / redo history ----------
+  var undoStack = [], redoStack = [];
+  function pushUndo(){ try{ undoStack.push(copy(state)); if(undoStack.length > 80) undoStack.shift(); redoStack.length = 0; }catch(e){} }
+  function applyHistory(snap){
+    state = snap;
+    if(activeSlot !== null && slots[activeSlot]) slots[activeSlot] = copy(state);
+    draw(); persist();
+  }
+  function undo(){ if(progAnimating || !undoStack.length) return; try{ redoStack.push(copy(state)); }catch(e){} applyHistory(undoStack.pop()); }
+  function redo(){ if(progAnimating || !redoStack.length) return; try{ undoStack.push(copy(state)); }catch(e){} applyHistory(redoStack.pop()); }
+  document.addEventListener("keydown", function(ev){
+    if(!(ev.ctrlKey || ev.metaKey)) return;
+    if(editingEl) return;                       // while editing a field, let it handle its own text undo
+    var z = (ev.key === "z" || ev.key === "Z"), y = (ev.key === "y" || ev.key === "Y");
+    if(z && !ev.shiftKey){ ev.preventDefault(); undo(); }
+    else if((z && ev.shiftKey) || y){ ev.preventDefault(); redo(); }
   });
 
   document.getElementById("slots").addEventListener("click", function(ev){
@@ -556,14 +1701,22 @@
         if(!hasChar(state)){ setFeed("Nothing to save yet — paste a sheet first.", "warn"); return; }
         slots[i] = copy(state); activeSlot = i;
         renderSlots(); persist(); setFeed("Saved to Slot "+(i+1)+".", "ok");
-      } else if(btn.classList.contains("slot-clear")){
+      } else if(btn.classList.contains("slot-export")){
+        var src = slots[i] ? slots[i] : state;
+        if(!hasChar(src)){ setFeed("Nothing to export yet — paste or save a sheet first.", "warn"); return; }
+        input.value = exportText(src);
+        input.focus(); input.scrollTop = 0;
+        setFeed("Exported to the text box — ready to copy or re-paste.", "ok");
+      } else if(btn.classList.contains("slot-trash")){
         if(!slots[i]) return;
         slots[i] = null; if(activeSlot===i){ state = {abilities:{}}; draw(); }
         renderSlots(); persist(); setFeed("Slot "+(i+1)+" cleared.", "");
       }
-      return;
+      return;   // a button was clicked — don't also load
     }
+    // clicked the card body
     if(!slots[i]){
+      // switch to this empty slot — blank working view
       state = {abilities:{}}; activeSlot = i;
       draw(); renderSlots(); persist(); setFeed("Slot "+(i+1)+" selected — paste a sheet to fill it.", "");
       return;
@@ -593,16 +1746,16 @@
 "* Tracker's Bracers (Quick access to prepared items)",
 "* Comically Large Backpack (High storage capacity, cumbersome in tight situations)",
 "Inventory:",
-"10 coin, 1 ration",
+"10 coin, 1 ration, Bundle of Rope, 2 Vials of Antitoxin, Charred Journal",
 "Progression:",
 "",
 "* Level XP = 2/3 Achievements",
-"* DEX XP = 1/3",
-"* CON XP = 2/3",
-"* Proficiency XP = Medicine [2/3]",
+"* DEX XP = 2/4",
+"* Proficiency XP = Medicine [1/3]",
 "* Death Saves = 2/3 Remaining"
   ].join("\n");
 
+  // boot
   (async function(){
     var data = await restore();
     if(data){ slots = data.slots || [null,null,null]; state = data.current || null; }
@@ -612,6 +1765,5 @@
 
 })();
 </script>
-
 </body>
 </html>
