@@ -1,18 +1,20 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <!--
-  Campaign Codex — a presentation layer for the Claude D&D system.
+  Character Dashboard — a presentation layer for the Claude D&D system.
   Paste a /SHEET or /STATUS response and it parses the fixed formats
-  into a living visual dashboard. No game logic, no AI: pure parse + render.
+  into a living visual dashboard.
 -->
 <head>
 <meta charset="utf-8" />
+    <title>Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600&family=Spline+Sans+Mono:wght@500;600&display=swap" rel="stylesheet" />
 </head>
-
 <body>
+
 <style>
   :root{
     /* Tome-and-ledger palette — dark bound leather, gilt, verdigris, ember */
@@ -305,13 +307,25 @@
 
   /* level achievements — gold horizontal dashes */
   /* level achievements — gold diamonds (≈ same footprint as the death circles) */
-  .ldiamond{ width:13px; height:13px; transform:rotate(45deg); border-radius:3px; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease; }
+  .ldiamond{ position:relative; overflow:hidden; width:13px; height:13px; transform:rotate(45deg); border-radius:3px; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease; }
   .ldiamond.on{ background:linear-gradient(135deg,var(--gilt),var(--gilt-soft)); border-color:var(--gilt); box-shadow:0 0 8px rgba(201,162,75,.35); }
 
   /* death saves — original circular pips */
   .dcirc{ width:18px; height:18px; border-radius:50%; background:var(--ink); border:1.5px solid var(--edge); display:inline-block; transition:background .3s ease, border-color .3s ease, opacity .3s ease; }
   .dcirc.on{ background:radial-gradient(circle,var(--ember),#7e3120); border-color:var(--ember); box-shadow:0 0 9px rgba(200,98,63,.4); }
   .dcirc.spent{ opacity:.5; }
+  /* death-save minus: two dark-red pulses, then the rightmost pip fades to hollow semi-slowly */
+  .dcirc.dpulse{ animation:dcircPulse .7s ease-in-out 2; }
+  @keyframes dcircPulse{
+    0%{   box-shadow:0 0 6px rgba(155,28,16,.45); }
+    50%{  box-shadow:0 0 16px 4px #9b1c10; }
+    100%{ box-shadow:0 0 6px rgba(155,28,16,.45); }
+  }
+  .dcirc.unfilling{ animation:dcircUnfill .65s ease forwards; }
+  @keyframes dcircUnfill{
+    0%{   background:var(--ember); border-color:var(--ember); box-shadow:0 0 9px rgba(200,98,63,.4); opacity:1; }
+    100%{ background:var(--ink); border-color:var(--edge); box-shadow:0 0 0 0 rgba(200,98,63,0); opacity:.5; }
+  }
 
   /* ability / proficiency — gold vertical dashes (wrap as they multiply) */
   .vdash-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
@@ -396,9 +410,18 @@
   .kv .v{ color:var(--vellum); font-size:13.5px; flex:1; }
 
   .ev-blob{ display:block; }
-  .ev-line{ position:relative; font-size:13px; color:var(--vellum-dim); margin-bottom:5px; padding-left:16px; }
+  .ev-line{ position:relative; min-height:1.45em; font-size:13px; color:var(--vellum-dim); margin-bottom:5px; padding-left:16px; }
   .ev-line::before{ content:"•"; position:absolute; left:3px; color:var(--gilt-soft); }
   .ev-blob.editing{ outline:none; }
+  /* recent-events editor: a real textarea, so newlines / caret / growth all behave natively */
+  .ev-editor{
+    width:100%; min-height:2.4em; resize:none; display:block; overflow:hidden;
+    background:var(--ink); color:var(--vellum);
+    border:1px solid var(--gilt); border-radius:var(--radius-sm);
+    padding:9px 12px; margin-top:2px;
+    font-family:"Inter", system-ui, sans-serif; font-size:13px; line-height:1.5;
+  }
+  .ev-editor:focus{ outline:none; box-shadow:inset 0 0 0 1px var(--gilt-soft); }
 
   .objective{
     background:linear-gradient(180deg,rgba(201,162,75,.07),transparent);
@@ -483,16 +506,34 @@
     100%{ transform:translate(-50%,-50%) translate(var(--dx), var(--dy)) scale(0); opacity:0; }
   }
 
-  /* level-up: rainbow glow on each diamond, following its actual (rotated) shape so the gaps fill in */
-  .ldiamond.dglow{ animation:diamondGlow 1.7s ease-in-out; }
-  @keyframes diamondGlow{
-    0%{ box-shadow:0 0 4px 0 rgba(201,162,75,.35); }
-    15%{ box-shadow:0 0 11px 3px #e0533f; }
-    33%{ box-shadow:0 0 12px 3px #df8a3a; }
-    50%{ box-shadow:0 0 12px 3px #6fb069; }
-    67%{ box-shadow:0 0 12px 3px #4aa3c9; }
-    85%{ box-shadow:0 0 11px 3px #9b5bc9; }
-    100%{ box-shadow:0 0 8px rgba(201,162,75,.35); }
+  /* level-up: a gold glow OUTSIDE each diamond, two soft pulses (matching the ability/proficiency pulse) */
+  .ldiamond.dglow{ animation:goldHalo 1s ease-in-out 2; z-index:2; }
+  @keyframes goldHalo{
+    0%{   box-shadow:0 0 6px 1px rgba(201,162,75,.35); }
+    50%{  box-shadow:0 0 15px 4px var(--gilt); }
+    100%{ box-shadow:0 0 6px 1px rgba(201,162,75,.35); }
+  }
+  /* INSIDE: a glossy shine sweeps left -> right across the gold fill; staggered across the three, TWO sweeps each */
+  .ldiamond.dglow::before{
+    content:""; position:absolute; left:50%; top:50%; width:26px; height:26px; margin:-13px 0 0 -13px;
+    background:linear-gradient(90deg, transparent 38%, rgba(255,255,255,.92) 50%, transparent 62%);
+    transform:rotate(-45deg) translateX(-16px); opacity:0; pointer-events:none; z-index:4;
+    animation:iconShine 1s ease-out var(--shine-delay, 0s) 2 both;
+  }
+  @keyframes iconShine{           /* sweep L->R in the first half, idle (invisible) the rest, so 2 iterations = two distinct shines */
+    0%{   transform:rotate(-45deg) translateX(-16px); opacity:0; }
+    8%{   opacity:1; }
+    48%{  transform:rotate(-45deg) translateX(16px); opacity:1; }
+    56%{  transform:rotate(-45deg) translateX(16px); opacity:0; }
+    100%{ transform:rotate(-45deg) translateX(16px); opacity:0; }
+  }
+
+  /* ability / proficiency level-up: two soft slow gold pulses fully around each dash before it unfills */
+  .vdash.vpulse{ animation:vdashPulse 1s ease-in-out 2; }
+  @keyframes vdashPulse{
+    0%{   box-shadow:0 0 7px rgba(201,162,75,.3); }
+    50%{  box-shadow:0 0 15px 3px var(--gilt); }
+    100%{ box-shadow:0 0 7px rgba(201,162,75,.3); }
   }
 
 
@@ -1264,54 +1305,70 @@
 
   var editingEl = null;
   var coarsePointer = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+
+  // Recent Events get their own editor: a real <textarea>, so line breaks, the caret, and vertical
+  // growth are handled natively. shift+enter (enter on mobile) = new line; enter (blur on mobile) = commit.
+  function beginEventsEdit(blob){
+    editingEl = blob;
+    var before = (state.events || []).join("\n");
+    var ta = document.createElement("textarea");
+    ta.className = "ev-editor";
+    ta.value = before;
+    ta.placeholder = "One event per line…";
+    ta.setAttribute("aria-label", "Recent events, one per line");
+    blob.style.display = "none";
+    blob.parentNode.insertBefore(ta, blob.nextSibling);
+    function size(){ ta.style.height = "auto"; ta.style.height = (ta.scrollHeight + 2) + "px"; }   // grow with content
+    size();
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);   // caret at the end
+
+    var done = false;
+    function finish(commit){
+      if(done) return; done = true;
+      ta.removeEventListener("keydown", onKey);
+      ta.removeEventListener("blur", onBlur);
+      ta.removeEventListener("input", size);
+      var val = ta.value;
+      if(ta.parentNode) ta.parentNode.removeChild(ta);
+      blob.style.display = "";
+      editingEl = null;
+      if(!commit){ draw(); return; }
+      var ev = val.split(/\n/).map(function(x){ return x.replace(/[ \t]+/g, " ").trim(); }).filter(Boolean);
+      if(ev.join("\n") === before){ draw(); return; }
+      pushUndo();
+      state.events = ev;
+      syncSlot(); draw(); persist();
+      sparkle(stage.querySelector('[data-edit="events"]'), "gold");
+    }
+    function onKey(e){
+      if(e.key === "Escape"){ e.preventDefault(); finish(false); }
+      else if(e.key === "Enter" && !e.shiftKey && !coarsePointer){ e.preventDefault(); finish(true); }
+      // shift+enter (desktop) or plain enter (mobile) falls through to the textarea's native newline
+    }
+    function onBlur(){ finish(true); }
+    ta.addEventListener("keydown", onKey);
+    ta.addEventListener("blur", onBlur);
+    ta.addEventListener("input", size);
+  }
+
   function beginEdit(el){
     if(editingEl) return;                // one field at a time
+    if(el.getAttribute("data-multiline") === "1"){ beginEventsEdit(el); return; }
     editingEl = el;
     var path  = el.getAttribute("data-edit");
     var tok   = el.getAttribute("data-tok");
     var wasPh = el.getAttribute("data-ph") === "1";
-    var multiline = el.getAttribute("data-multiline") === "1";
-    var before;
-    if(multiline){
-      before = (state.events || []).join("\n");
-      el.classList.remove("is-ph");
-      if(wasPh){ var ph = el.querySelector(".ev-line"); if(ph) ph.textContent = ""; }   // empty bullet to type into
-      if(!el.querySelector(".ev-line")){ var d0 = document.createElement("div"); d0.className = "ev-line"; el.appendChild(d0); }
-    } else {
-      before = wasPh ? "" : el.textContent;
-      if(wasPh){ el.textContent = ""; el.classList.remove("is-ph"); }
-    }
+    var before = wasPh ? "" : el.textContent;
+    if(wasPh){ el.textContent = ""; el.classList.remove("is-ph"); }
     var dragRow = el.closest("[data-drag]");
     if(dragRow) dragRow.setAttribute("draggable", "false");   // avoid drag fighting text-selection
     el.classList.add("editing");
     el.setAttribute("contenteditable", "true");
     el.focus();
     var sel = window.getSelection();
-    if(multiline){                                            // caret at the end (don't select everything)
-      var er = document.createRange(); er.selectNodeContents(el); er.collapse(false);
-      sel.removeAllRanges(); sel.addRange(er);
-    } else {
-      var rng = document.createRange(); rng.selectNodeContents(el);
-      sel.removeAllRanges(); sel.addRange(rng);
-    }
-
-    // split the current bullet at the caret into a new .ev-line bullet
-    function newBullet(){
-      var s = window.getSelection(); if(!s.rangeCount) return;
-      var range = s.getRangeAt(0);
-      var node = range.startContainer;
-      var line = node.nodeType === 3 ? node.parentElement : node;
-      while(line && line !== el && !(line.classList && line.classList.contains("ev-line"))) line = line.parentElement;
-      if(!line || line === el){ line = document.createElement("div"); line.className = "ev-line"; el.appendChild(line); }
-      var pre = document.createRange(); pre.selectNodeContents(line); pre.setEnd(range.startContainer, range.startOffset);
-      var offset = pre.toString().length;
-      var full = line.textContent;
-      line.textContent = full.slice(0, offset);
-      var nl = document.createElement("div"); nl.className = "ev-line"; nl.textContent = full.slice(offset);
-      if(line.nextSibling) el.insertBefore(nl, line.nextSibling); else el.appendChild(nl);
-      var r = document.createRange(); r.setStart(nl, 0); r.collapse(true);
-      s.removeAllRanges(); s.addRange(r);
-    }
+    var rng = document.createRange(); rng.selectNodeContents(el);
+    sel.removeAllRanges(); sel.addRange(rng);
 
     var done = false;
     function finish(commit){
@@ -1320,20 +1377,6 @@
       el.removeEventListener("keydown", onKey);
       el.removeEventListener("blur", onBlur);
       editingEl = null;
-
-      if(multiline){
-        var lines = [];
-        el.querySelectorAll(".ev-line").forEach(function(d){
-          d.textContent.split(/\n/).forEach(function(x){ var t = x.replace(/\s+/g, " ").trim(); if(t) lines.push(t); });
-        });
-        var joined = lines.join("\n");
-        if(!commit || joined === before){ draw(); return; }
-        pushUndo();
-        state.events = lines;
-        syncSlot(); draw(); persist();
-        sparkle(stage.querySelector('[data-edit="events"]'), "gold");
-        return;
-      }
 
       var after = el.textContent.replace(/\s+/g, " ").trim();
       if(!commit || after === String(before).trim()){ draw(); return; }   // nothing changed
@@ -1348,17 +1391,16 @@
         sparkleHealth(beforeRatio);   // bar: green if fuller, red if emptier
       } else {
         var q = '[data-edit="' + path + '"]' + (tok != null ? '[data-tok="' + tok + '"]' : '');
-        sparkle(stage.querySelector(q), "gold");
+        var variant = "gold";
+        if(/(\.score|\.mod|\.bonus)$/.test(path)){                       // ability score/mod or proficiency bonus
+          var bv = parseInt(String(before).replace(/[^\-0-9]/g, ""), 10);
+          var av = parseInt(String(after).replace(/[^\-0-9]/g, ""), 10);
+          if(!isNaN(bv) && !isNaN(av) && av < bv) variant = "grey";      // any decrease -> grey
+        }
+        sparkle(stage.querySelector(q), variant);
       }
     }
     function onKey(e){
-      if(multiline){
-        // shift+enter (any device) or plain enter on touch -> new bullet; plain enter on desktop -> commit; blur (keyboard dismiss) -> commit
-        if(e.key === "Enter" && (e.shiftKey || coarsePointer)){ e.preventDefault(); newBullet(); }
-        else if(e.key === "Enter"){ e.preventDefault(); finish(true); }
-        else if(e.key === "Escape"){ e.preventDefault(); finish(false); }
-        return;
-      }
       if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); finish(true); }   // commit
       else if(e.key === "Escape"){ e.preventDefault(); el.textContent = before; finish(false); }
     }
@@ -1392,10 +1434,31 @@
     else if(name === "rations"){ cur = parseInt(state.rations, 10) || 0; nv = Math.max(0, cur + step); if(nv === cur) return; pushUndo(); state.rations = String(nv); }
     else return;
     syncSlot(); draw(); persist();
-    sparkle(stage.querySelector('[data-edit="' + name + '"]'), "gold");   // generic gold sparkle on the value
+    sparkle(stage.querySelector('[data-edit="' + name + '"]'), dir === "dn" ? "grey" : "gold");   // up = gold, down = grey
   }
 
   var progAnimating = false;
+
+  // death-save minus: pulse every pip dark red twice, then unfill the rightmost filled pip semi-slowly, then commit the loss
+  function deathTickDown(pathBase){
+    var cell = stage.querySelector('[data-prog-cell="' + pathBase + '"]');
+    var r = resolve(state, pathBase);
+    if(!cell || !r){ if(r){ r.obj[r.key] = Math.max(0, r.obj[r.key] - 1); syncSlot(); draw(); persist(); } return; }
+    progAnimating = true;
+    cell.classList.add("tapped");
+    cell.querySelectorAll(".dcirc").forEach(function(d){ d.classList.remove("dpulse"); void d.offsetWidth; d.classList.add("dpulse"); });
+    setTimeout(function(){                                       // after the two pulses
+      var ons = cell.querySelectorAll(".dcirc.on");
+      var last = ons.length ? ons[ons.length - 1] : null;
+      if(last) last.classList.add("unfilling");                  // semi-slow fade to hollow
+      setTimeout(function(){
+        var rr = resolve(state, pathBase);
+        if(rr) rr.obj[rr.key] = Math.max(0, rr.obj[rr.key] - 1);
+        syncSlot(); draw(); persist();
+        progAnimating = false;
+      }, 680);
+    }, 1400);                                                    // 2 x 0.7s pulses
+  }
 
   // animated level-up: rainbow numbers, idle, unfill R->L, then either grow the requirement (ability/prof) or raise the character level
   function levelUpProg(pathBase, isLevel){
@@ -1407,7 +1470,9 @@
     var sel = isLevel ? ".ldiamond" : ".vdash";
     var icons = Array.prototype.slice.call(cell.querySelectorAll(sel));
     if(isLevel){                                              // rainbow glow on each diamond (follows the shape, fills the gaps) = level up
-      cell.querySelectorAll(".ldiamond").forEach(function(d){ d.classList.remove("dglow"); void d.offsetWidth; d.classList.add("dglow"); });
+      cell.querySelectorAll(".ldiamond").forEach(function(d, i){ d.classList.remove("dglow"); void d.offsetWidth; d.style.setProperty("--shine-delay", (i * 0.22) + "s"); d.classList.add("dglow"); });
+    } else {                                                  // ability / proficiency: two soft gold pulses around each dash
+      cell.querySelectorAll(".vdash").forEach(function(v){ v.classList.remove("vpulse"); void v.offsetWidth; v.classList.add("vpulse"); });
     }
     var STEP = 160;
     setTimeout(function(){                                   // 2s idle, then unfill right -> left
@@ -1454,13 +1519,18 @@
       if(c){ c.classList.add("tapped"); sparkle(c.querySelector(".c"), variant); }
     }
 
-    // death saves: clamped, rainbow on up / grey on down, no leveling
+    // death saves: up = rainbow flash (immediate); down = dark-red double pulse, then the rightmost pip unfills slowly
     if(isDeath){
-      var dv = Math.max(0, Math.min(need, have + (dir === "up" ? 1 : -1)));
-      if(dv === have) return;
+      if(dir === "up"){
+        if(have >= need) return;
+        pushUndo();
+        r.obj[r.key] = have + 1; syncSlot(); draw(); persist();
+        flash("rainbow");
+        return;
+      }
+      if(have <= 0) return;            // nothing left to lose
       pushUndo();
-      r.obj[r.key] = dv; syncSlot(); draw(); persist();
-      flash(dir === "up" ? "rainbow" : "grey");
+      deathTickDown(pathBase);
       return;
     }
 
@@ -1746,12 +1816,13 @@
 "* Tracker's Bracers (Quick access to prepared items)",
 "* Comically Large Backpack (High storage capacity, cumbersome in tight situations)",
 "Inventory:",
-"10 coin, 1 ration, Bundle of Rope, 2 Vials of Antitoxin, Charred Journal",
+"10 coin, 1 ration, Bundle of Rope, 2 Vials of Antitoxin, Brass Key, Half-burnt Journal",
 "Progression:",
 "",
 "* Level XP = 2/3 Achievements",
-"* DEX XP = 2/4",
-"* Proficiency XP = Medicine [1/3]",
+"* DEX XP = 1/3",
+"* CON XP = 2/3",
+"* Proficiency XP = Medicine [2/3]",
 "* Death Saves = 2/3 Remaining"
   ].join("\n");
 
